@@ -1,7 +1,29 @@
+# Core Flask Dependencies
 Flask==3.0.3
 Werkzeug==3.0.3
 click==8.1.7
 itsdangerous==2.2.0
 Jinja2==3.1.4
 MarkupSafe==2.1.5
+
+# Input Validation and Schema Validation
 marshmallow==3.21.3
+jsonschema==4.19.1
+validators==0.22.0
+
+# HTTP Requests and API Integration
+requests==2.31.0
+urllib3==2.0.7
+
+# Environment Management
+python-dotenv==1.0.0
+
+# Security Enhancements
+cryptography==41.0.7
+
+# Optional: For direct Claude API integration (if needed)
+# anthropic==0.8.1
+
+# Development and Testing (optional)
+pytest==7.4.3
+pytest-flask==1.3.0
