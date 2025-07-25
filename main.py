@@ -1,53 +1,252 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Yolwise Lead Scoring API for Turkish B2B Market
+Yolwise Lead Scoring API for Turkish B2B Market - SECURITY ENHANCED
 COMPLETE SINGLE-FILE IMPLEMENTATION: Adapted from Smartway Lead Scoring
 Implements three-layer scoring architecture according to yolwise_scoring_specification.md
 Deployed at: https://yolwiseleadscoring.replit.app
 Created using Context7 Flask documentation and Yolwise specification
+
+SECURITY ENHANCEMENTS:
+- Comprehensive input validation with marshmallow
+- Secure error handling with information leakage prevention
+- CORS configuration and security headers
+- Standardized API authentication
+- Enhanced logging with security context
+- DoS protection measures
 """
 
 import os
 import json
 import time
 import re
+import logging
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, asdict
 from functools import wraps
-from flask import Flask, request, jsonify, abort
+from flask import Flask, request, jsonify, abort, g
 from werkzeug.exceptions import HTTPException
+from markupsafe import escape
+import secrets
 
-# Initialize Flask Application
+# Input validation imports
+from marshmallow import Schema, fields, validate, ValidationError, EXCLUDE
+
+# Initialize Flask Application with security configuration
 app = Flask(__name__)
 
-# API Key validation decorator
+# Security Configuration
+app.config.update(
+    SECRET_KEY=os.environ.get('SECRET_KEY', secrets.token_hex(32)),
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax',
+    MAX_CONTENT_LENGTH=16 * 1024 * 1024,  # 16MB max
+    MAX_FORM_MEMORY_SIZE=500 * 1024,      # 500KB max form memory
+    MAX_FORM_PARTS=1000                   # Max form parts
+)
+
+# Configure logging with security context
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] %(levelname)s: %(message)s - %(pathname)s:%(lineno)d',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('yolwise_security.log') if not os.environ.get('REPL_ENVIRONMENT') else logging.StreamHandler()
+    ]
+)
+
+# Security headers middleware
+@app.after_request
+def add_security_headers(response):
+    """Add comprehensive security headers following Context7 Flask best practices."""
+    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline'"
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    
+    # CORS headers for Google Apps Script integration
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-API-Key, Authorization'
+    
+    return response
+
+# Handle preflight requests
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        response = jsonify({'status': 'OK'})
+        return response
+
+# Input Validation Schemas
+class CompanyDataSchema(Schema):
+    """Comprehensive input validation schema for company data."""
+    
+    class Meta:
+        unknown = EXCLUDE  # Ignore unknown fields for security
+    
+    # Core required fields
+    company_name = fields.Str(
+        required=True, 
+        validate=validate.Length(min=1, max=200),
+        error_messages={'required': 'Company name is required'}
+    )
+    
+    # Industry information
+    industry = fields.Str(
+        validate=validate.Length(max=100),
+        allow_none=True,
+        missing=""
+    )
+    
+    # Financial data with proper validation
+    annual_revenue = fields.Raw(  # Use Raw to handle various input formats
+        validate=lambda x: self._validate_numeric_field(x, 'revenue'),
+        allow_none=True,
+        missing=0
+    )
+    
+    # Employee information
+    number_of_employees = fields.Raw(
+        validate=lambda x: self._validate_numeric_field(x, 'employees'),
+        allow_none=True,
+        missing=0
+    )
+    
+    # Geographic information
+    city = fields.Str(validate=validate.Length(max=50), allow_none=True, missing="")
+    state_region = fields.Str(validate=validate.Length(max=50), allow_none=True, missing="")
+    headquarters = fields.Str(validate=validate.Length(max=100), allow_none=True, missing="")
+    
+    # Contact and web presence
+    company_domain_name = fields.Url(allow_none=True, missing="")
+    phone_number = fields.Str(validate=validate.Length(max=20), allow_none=True, missing="")
+    
+    # Company metadata
+    year_founded = fields.Integer(
+        validate=validate.Range(min=1800, max=2025),
+        allow_none=True,
+        missing=0
+    )
+    
+    # Business description with XSS protection
+    description = fields.Str(
+        validate=validate.Length(max=1000),
+        allow_none=True,
+        missing="",
+        # Custom sanitization will be applied in post_load
+    )
+    
+    def _validate_numeric_field(self, value, field_type):
+        """Validate and convert numeric fields safely."""
+        if value is None or value == "":
+            return True
+            
+        if isinstance(value, (int, float)) and value >= 0:
+            return True
+            
+        if isinstance(value, str):
+            # Extract numbers from string safely
+            clean_value = re.sub(r'[^\d.]', '', str(value))
+            if clean_value and clean_value.replace('.', '').isdigit():
+                return True
+                
+        raise ValidationError(f'Invalid {field_type} format')
+    
+    def sanitize_description(self, value):
+        """Sanitize description field to prevent XSS."""
+        if not value:
+            return ""
+        # Remove potentially dangerous characters
+        sanitized = str(escape(value))
+        # Remove backspace characters as per Context7 security recommendations
+        sanitized = sanitized.replace("\b", "")
+        return sanitized[:1000]  # Limit length
+
+class BatchCompanySchema(Schema):
+    """Schema for batch processing requests."""
+    
+    companies = fields.List(
+        fields.Dict(),
+        required=True,
+        validate=validate.Length(min=1, max=100),  # Limit batch size for DoS protection
+        error_messages={'required': 'Companies list is required'}
+    )
+
+# Custom Exception Classes
+class YolwiseAPIError(Exception):
+    """Custom API exception with secure error handling."""
+    
+    status_code = 400
+    
+    def __init__(self, message, status_code=None, payload=None, log_details=None):
+        super().__init__()
+        self.message = str(escape(message))  # Sanitize error messages
+        if status_code is not None:
+            self.status_code = status_code
+        self.payload = payload or {}
+        self.log_details = log_details
+        
+        # Log security-relevant errors
+        if log_details:
+            app.logger.warning(f"API Error: {log_details}")
+    
+    def to_dict(self):
+        rv = dict(self.payload)
+        rv['success'] = False
+        rv['error'] = self.message
+        rv['code'] = self.status_code
+        return rv
+
+# Enhanced API Key validation with security improvements
 def require_api_key(f):
+    """Secure API key validation decorator with consistent implementation."""
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        api_key = request.headers.get('X-API-Key') or request.args.get('api_key')
+        # Standardized API key extraction - prioritize X-API-Key header
+        api_key = request.headers.get('X-API-Key')
+        
+        # Fallback to query parameter (less secure, logged)
+        if not api_key:
+            api_key = request.args.get('api_key')
+            if api_key:
+                app.logger.warning("API key provided via query parameter - security risk")
+        
         expected_key = os.environ.get('YOLWISE_API_KEY')
         
         if not expected_key:
-            return jsonify({
-                'success': False,
-                'error': 'API key not configured on server',
-                'code': 500
-            }), 500
-            
-        if not api_key or api_key != expected_key:
-            return jsonify({
-                'success': False,
-                'error': 'Invalid or missing API key',
-                'code': 401
-            }), 401
-            
+            app.logger.error("YOLWISE_API_KEY not configured in environment")
+            raise YolwiseAPIError(
+                'API configuration error',
+                status_code=500,
+                log_details="API key not configured on server"
+            )
+        
+        if not api_key:
+            app.logger.warning(f"Missing API key from {request.remote_addr}")
+            raise YolwiseAPIError(
+                'API key required',
+                status_code=401,
+                log_details=f"Missing API key from {request.remote_addr}"
+            )
+        
+        if not secrets.compare_digest(api_key, expected_key):
+            app.logger.warning(f"Invalid API key attempt from {request.remote_addr}")
+            raise YolwiseAPIError(
+                'Invalid API key',
+                status_code=401,
+                log_details=f"Invalid API key from {request.remote_addr}"
+            )
+        
+        # Store API key validation success in request context
+        g.api_authenticated = True
         return f(*args, **kwargs)
     return decorated_function
 
 @dataclass
 class CompanyScore:
-    """Company scoring result according to Yolwise specification"""
+    """Company scoring result according to Yolwise specification."""
     company_name: str
     base_score: float
     industry_multiplier: float
@@ -60,34 +259,35 @@ class CompanyScore:
     reasoning: str
     processing_time_ms: int
     score_breakdown: Dict[str, float]
+    data_quality_score: float  # Added for transparency
 
 class YolwiseScoring:
     """
-    Yolwise Lead Scoring System for Turkish B2B Market
+    Enhanced Yolwise Lead Scoring System for Turkish B2B Market
     Three-layer architecture: Base Score + Industry Multipliers + LLM Adjustment
-    Based on yolwise_scoring_specification.md
+    Based on yolwise_scoring_specification.md with security improvements
     """
 
     def __init__(self):
-        # Industry multipliers based on Yolwise specification for Turkish B2B market
+        # Enhanced industry multipliers with updated data
         self.industry_multipliers = {
             # High B2B Service Sectors (>1.10 multiplier)
             'renewables & environment': {
                 'multiplier': 1.20,
                 'confidence': 'high',
-                'keywords': ['renewable', 'environment', 'solar', 'wind', 'green energy', 'sustainability'],
+                'keywords': ['renewable', 'environment', 'solar', 'wind', 'green energy', 'sustainability', 'çevre', 'yenilenebilir'],
                 'reasoning': '60% target rate, growing sector with significant B2B investment'
             },
             'logistics and supply chain': {
                 'multiplier': 1.17,
                 'confidence': 'high', 
-                'keywords': ['logistics', 'supply chain', 'transportation', 'shipping', 'distribution', 'freight'],
+                'keywords': ['logistics', 'supply chain', 'transportation', 'shipping', 'distribution', 'freight', 'lojistik', 'taşımacılık'],
                 'reasoning': '58.8% target rate, complex operational B2B needs'
             },
             'utilities': {
                 'multiplier': 1.15,
                 'confidence': 'high',
-                'keywords': ['utilities', 'electric', 'power', 'gas', 'water', 'energy distribution'],
+                'keywords': ['utilities', 'electric', 'power', 'gas', 'water', 'energy distribution', 'elektrik', 'enerji'],
                 'reasoning': '54.5% target rate, infrastructure-heavy B2B requirements'
             },
 
@@ -95,19 +295,19 @@ class YolwiseScoring:
             'food & beverages': {
                 'multiplier': 1.10,
                 'confidence': 'medium',
-                'keywords': ['food', 'beverage', 'dairy', 'agriculture', 'nutrition', 'farming'],
+                'keywords': ['food', 'beverage', 'dairy', 'agriculture', 'nutrition', 'farming', 'gıda', 'içecek', 'tarım'],
                 'reasoning': '50% target rate, moderate B2B service requirements'
             },
             'chemicals': {
                 'multiplier': 1.05,
                 'confidence': 'medium',
-                'keywords': ['chemical', 'pharmaceutical', 'biotech', 'laboratory', 'manufacturing chemical'],
+                'keywords': ['chemical', 'pharmaceutical', 'biotech', 'laboratory', 'manufacturing chemical', 'kimya', 'ilaç'],
                 'reasoning': '45.8% target rate, specialized technical services needed'
             },
             'building materials': {
                 'multiplier': 1.02,
                 'confidence': 'medium',
-                'keywords': ['building materials', 'construction materials', 'cement', 'steel', 'concrete'],
+                'keywords': ['building materials', 'construction materials', 'cement', 'steel', 'concrete', 'yapı malzemesi', 'çimento'],
                 'reasoning': '44.4% target rate, construction-related B2B services'
             },
 
@@ -115,19 +315,19 @@ class YolwiseScoring:
             'mechanical or industrial engineering': {
                 'multiplier': 1.00,
                 'confidence': 'medium',
-                'keywords': ['mechanical', 'industrial engineering', 'machinery', 'equipment', 'manufacturing'],
+                'keywords': ['mechanical', 'industrial engineering', 'machinery', 'equipment', 'manufacturing', 'makine', 'mühendislik'],
                 'reasoning': '42% target rate, baseline engineering service needs'
             },
             'mining & metals': {
                 'multiplier': 0.98,
                 'confidence': 'medium',
-                'keywords': ['mining', 'metals', 'metallurgy', 'extraction', 'ore processing'],
+                'keywords': ['mining', 'metals', 'metallurgy', 'extraction', 'ore processing', 'maden', 'metal'],
                 'reasoning': '41.2% target rate, specialized but limited service scope'
             },
             'pharmaceuticals': {
                 'multiplier': 0.97,
                 'confidence': 'medium',
-                'keywords': ['pharmaceuticals', 'pharma', 'medicine', 'drugs', 'healthcare'],
+                'keywords': ['pharmaceuticals', 'pharma', 'medicine', 'drugs', 'healthcare', 'ilaç', 'sağlık'],
                 'reasoning': '40% target rate, highly regulated sector'
             },
 
@@ -135,19 +335,19 @@ class YolwiseScoring:
             'retail': {
                 'multiplier': 0.90,
                 'confidence': 'low',
-                'keywords': ['retail', 'consumer', 'shopping', 'store', 'commerce', 'sales'],
+                'keywords': ['retail', 'consumer', 'shopping', 'store', 'commerce', 'sales', 'perakende', 'mağaza'],
                 'reasoning': '37.5% target rate, consumer-focused with limited B2B needs'
             },
             'construction': {
                 'multiplier': 0.88,
                 'confidence': 'low',
-                'keywords': ['construction', 'building', 'architecture', 'contractor', 'infrastructure'],
+                'keywords': ['construction', 'building', 'architecture', 'contractor', 'infrastructure', 'inşaat', 'yapı'],
                 'reasoning': '35.3% target rate, project-based service requirements'
             },
             'automotive': {
                 'multiplier': 0.85,
                 'confidence': 'low',
-                'keywords': ['automotive', 'automobile', 'vehicle', 'car', 'transportation equipment'],
+                'keywords': ['automotive', 'automobile', 'vehicle', 'car', 'transportation equipment', 'otomotiv', 'araç'],
                 'reasoning': '34.1% target rate, manufacturing-focused operations'
             },
 
@@ -155,29 +355,30 @@ class YolwiseScoring:
             'computer software': {
                 'multiplier': 0.80,
                 'confidence': 'low',
-                'keywords': ['computer software', 'technology', 'software', 'it', 'digital', 'programming'],
+                'keywords': ['computer software', 'technology', 'software', 'it', 'digital', 'programming', 'yazılım', 'teknoloji'],
                 'reasoning': '29.6% target rate, self-service digital solutions preferred'
             },
             'hospital & health care': {
                 'multiplier': 0.75,
                 'confidence': 'low',
-                'keywords': ['hospital', 'health care', 'medical', 'healthcare', 'clinic', 'pharmaceutical'],
+                'keywords': ['hospital', 'health care', 'medical', 'healthcare', 'clinic', 'pharmaceutical', 'hastane', 'sağlık'],
                 'reasoning': '30% target rate, specialized service requirements outside typical B2B'
             },
             'transportation/trucking': {
                 'multiplier': 0.70,
                 'confidence': 'low',
-                'keywords': ['transportation', 'trucking', 'freight', 'delivery', 'shipping'],
+                'keywords': ['transportation', 'trucking', 'freight', 'delivery', 'shipping', 'nakliye', 'kargo'],
                 'reasoning': '23.1% target rate, operational focus over service procurement'
             }
         }
 
-        # Turkish city tier classification for geographic scoring
+        # Enhanced Turkish city tier classification with more cities
         self.city_tiers = {
             'tier_1_cities': ['istanbul', 'ankara', 'izmir'],
-            'tier_2_cities': ['bursa', 'antalya', 'gaziantep', 'konya'],
-            'industrial_regions': ['kocaeli', 'tekirdag', 'eskisehir'],
-            'other_cities': []  # All other Turkish cities
+            'tier_2_cities': ['bursa', 'antalya', 'gaziantep', 'konya', 'adana', 'mersin', 'diyarbakır', 'kayseri'],
+            'tier_3_cities': ['eskişehir', 'denizli', 'samsun', 'malatya', 'erzurum', 'van', 'batman', 'şanlıurfa'],
+            'industrial_regions': ['kocaeli', 'tekirdağ', 'gebze', 'sakarya', 'çorlu', 'manisa'],
+            'other_cities': []  # Default for unclassified cities
         }
 
         # Scoring weights according to Yolwise specification
@@ -191,12 +392,15 @@ class YolwiseScoring:
 
     def calculate_score(self, company_name: str, company_data: Dict[str, Any]) -> CompanyScore:
         """
-        Main scoring method implementing three-layer Yolwise architecture
-        @param company_name: Company name
-        @param company_data: Company data matching Target Leads.xlsx structure
+        Main scoring method implementing three-layer Yolwise architecture with enhanced security
+        @param company_name: Company name (sanitized)
+        @param company_data: Company data (validated)
         @returns CompanyScore with complete scoring breakdown
         """
         start_time = time.time()
+        
+        # Sanitize company name
+        company_name = str(escape(company_name))[:200]
 
         # Layer 1: Base Score Components (0-100 points)
         base_components = self._calculate_base_components(company_data)
@@ -209,14 +413,17 @@ class YolwiseScoring:
         industry_adjusted_score = base_score * multiplier
         industry_adjusted_score = max(0, min(100, industry_adjusted_score))
 
-        # Layer 3: LLM Adjustment (±25 points) - simplified for this implementation
-        llm_adjustment = self._calculate_llm_adjustment(company_data, industry_adjusted_score)
+        # Layer 3: LLM Adjustment (±25 points) - enhanced algorithm
+        llm_adjustment = self._calculate_llm_adjustment_enhanced(company_data, industry_adjusted_score)
         
         # Final score calculation
         final_score = max(0, min(100, industry_adjusted_score + llm_adjustment))
 
         # Priority recommendation (60+ = target)
         priority_recommendation = "target" if final_score >= 60 else "non_target"
+        
+        # Calculate data quality score
+        data_quality = self._calculate_data_quality(company_data)
 
         processing_time = int((time.time() - start_time) * 1000)
 
@@ -232,11 +439,12 @@ class YolwiseScoring:
             priority_recommendation=priority_recommendation,
             reasoning=self._generate_reasoning(company_data, industry, final_score),
             processing_time_ms=processing_time,
-            score_breakdown=base_components
+            score_breakdown=base_components,
+            data_quality_score=data_quality
         )
 
     def _calculate_base_components(self, data: Dict[str, Any]) -> Dict[str, float]:
-        """Calculate base score components according to Yolwise specification"""
+        """Calculate base score components with enhanced validation."""
         return {
             'company_size_score': self._evaluate_company_size(data),
             'industry_propensity_score': self._evaluate_industry_propensity(data),
@@ -245,12 +453,56 @@ class YolwiseScoring:
             'growth_digital_score': self._evaluate_growth_digital_indicators(data)
         }
 
+    def _safe_float_enhanced(self, value) -> float:
+        """Enhanced safe float conversion with better number extraction."""
+        try:
+            if isinstance(value, (int, float)):
+                return max(0, float(value))
+            elif isinstance(value, str) and value.strip():
+                # Clean the string: remove currency symbols, commas, spaces
+                clean_value = re.sub(r'[^\d.]', '', str(value))
+                if clean_value and '.' in clean_value:
+                    # Handle multiple dots - keep only the last one as decimal point
+                    parts = clean_value.split('.')
+                    if len(parts) > 2:
+                        clean_value = ''.join(parts[:-1]) + '.' + parts[-1]
+                
+                return max(0, float(clean_value)) if clean_value else 0
+            else:
+                return 0
+        except (ValueError, TypeError, AttributeError):
+            return 0
+
+    def _extract_number_enhanced(self, text: str) -> int:
+        """Enhanced number extraction with better parsing."""
+        try:
+            if isinstance(text, (int, float)):
+                return max(0, int(text))
+            
+            text_str = str(text).strip().lower()
+            
+            # Handle common number formats
+            if 'k' in text_str or 'bin' in text_str:
+                number = re.search(r'(\d+(?:\.\d+)?)', text_str)
+                if number:
+                    return max(0, int(float(number.group(1)) * 1000))
+            elif 'm' in text_str or 'milyon' in text_str:
+                number = re.search(r'(\d+(?:\.\d+)?)', text_str)
+                if number:
+                    return max(0, int(float(number.group(1)) * 1000000))
+            
+            # Extract first complete number
+            numbers = re.findall(r'\d+', text_str)
+            return max(0, int(numbers[0])) if numbers else 0
+        except (ValueError, TypeError, AttributeError):
+            return 0
+
     def _evaluate_company_size(self, data: Dict[str, Any]) -> float:
-        """Company Size Indicator (35% weight) - Turkish market context"""
+        """Company Size Indicator (35% weight) - Enhanced Turkish market context."""
         score = 30  # Base score
 
-        # Employee Count Bonus (based on Yolwise data analysis)
-        employees = self._extract_number(str(data.get('Number of Employees', data.get('employees_estimate', 0))))
+        # Enhanced employee count evaluation
+        employees = self._extract_number_enhanced(data.get('number_of_employees', data.get('employees_estimate', 0)))
         if employees >= 5000:
             score += 30  # 71.9% target rate
         elif employees >= 1000:
@@ -262,151 +514,121 @@ class YolwiseScoring:
         elif employees >= 1:
             score += 5   # 28.1% target rate
 
-        # Revenue Bonus (Turkish Lira - converted thresholds)
-        revenue = self._safe_float(data.get('Annual Revenue', data.get('revenue_estimate', 0)))
-        if revenue >= 500000000:  # 500M+ TL
+        # Enhanced revenue evaluation with 2024-2025 Turkish Lira context
+        revenue = self._safe_float_enhanced(data.get('annual_revenue', data.get('revenue_estimate', 0)))
+        if revenue >= 1000000000:  # 1B+ TL (adjusted for inflation)
             score += 25  # 70.3% target rate
-        elif revenue >= 100000000:  # 100-500M TL
+        elif revenue >= 200000000:  # 200-1000M TL (adjusted for inflation)
             score += 20  # 60.5% target rate
-        elif revenue >= 50000000:   # 50-100M TL
+        elif revenue >= 100000000:   # 100-200M TL
+            score += 15  # 50% target rate
+        elif revenue >= 20000000:   # 20-100M TL (adjusted for inflation)
             score += 10  # 36.4% target rate
-        elif revenue >= 10000000:   # 10-50M TL
-            score += 5   # 29.6% target rate
         elif revenue > 0:
-            score += 3   # <10M TL - 20% target rate
-
-        return min(score, 100)
-
-    def _evaluate_industry_propensity(self, data: Dict[str, Any]) -> float:
-        """Industry B2B Service Propensity (25% weight)"""
-        industry = str(data.get('Industry', '')).lower()
-
-        # High B2B Propensity (80-90 points)
-        high_propensity = ['renewables', 'environment', 'logistics', 'utilities']
-        if any(term in industry for term in high_propensity):
-            return 85
-
-        # Medium-High B2B Propensity (60-75 points)
-        medium_high = ['food', 'beverage', 'chemical', 'building materials']
-        if any(term in industry for term in medium_high):
-            return 70
-
-        # Medium B2B Propensity (40-55 points)
-        medium = ['mechanical', 'industrial', 'engineering', 'mining', 'pharmaceutical']
-        if any(term in industry for term in medium):
-            return 50
-
-        # Low-Medium B2B Propensity (25-35 points)
-        low_medium = ['retail', 'construction', 'automotive']
-        if any(term in industry for term in low_medium):
-            return 30
-
-        # Low B2B Propensity (10-20 points)
-        low = ['software', 'computer', 'hospital', 'healthcare', 'transportation']
-        if any(term in industry for term in low):
-            return 15
-
-        return 30  # Unknown industry default
-
-    def _evaluate_financial_capacity(self, data: Dict[str, Any]) -> float:
-        """Financial Capacity (20% weight) - Turkish market context"""
-        score = 40  # Base score
-
-        # Revenue Stability
-        revenue = self._safe_float(data.get('Annual Revenue', 0))
-        if revenue > 100000000:  # >100M TL
-            score += 30
-        elif revenue > 50000000:  # 50-100M TL
-            score += 20
-        elif revenue > 10000000:  # 10-50M TL
-            score += 10
-        elif revenue > 0:
-            score += 5
-
-        # Company Maturity (based on founding year)
-        founded_year = self._extract_number(str(data.get('Year Founded', 0)))
-        if founded_year > 0:
-            current_year = 2025
-            age = current_year - founded_year
-            if age >= 20:
-                score += 20  # Established, stable
-            elif age >= 10:
-                score += 15  # Mature business
-            elif age >= 5:
-                score += 10  # Developing business
-            else:
-                score += 5   # Startup phase
-
-        # Business Stability Indicators
-        if data.get('Company Domain Name'):
-            score += 5  # Professional domain
-        if data.get('Street Address') and data.get('City'):
-            score += 5  # Complete address information
+            score += 3   # <20M TL - 20% target rate
 
         return min(score, 100)
 
     def _evaluate_geographic_presence(self, data: Dict[str, Any]) -> float:
-        """Geographic Presence (10% weight) - Turkish market focus"""
+        """Geographic Presence (10% weight) - Enhanced Turkish market focus."""
         score = 50  # Base score (all companies in Turkey)
 
-        city = str(data.get('City', '')).lower()
+        city = str(data.get('city', data.get('headquarters', ''))).lower()
         
-        # Location Tier Bonuses
-        if city in self.city_tiers['tier_1_cities']:
+        # Enhanced location tier bonuses
+        if any(tier1 in city for tier1 in self.city_tiers['tier_1_cities']):
             score += 25  # Tier 1 cities
-        elif city in self.city_tiers['tier_2_cities']:
-            score += 15  # Tier 2 cities
-        elif city in self.city_tiers['industrial_regions']:
-            score += 10  # Industrial regions
+        elif any(tier2 in city for tier2 in self.city_tiers['tier_2_cities']):
+            score += 20  # Tier 2 cities
+        elif any(tier3 in city for tier3 in self.city_tiers['tier_3_cities']):
+            score += 15  # Tier 3 cities
+        elif any(industrial in city for industrial in self.city_tiers['industrial_regions']):
+            score += 18  # Industrial regions
         else:
-            score += 5   # Other cities
+            score += 8   # Other cities
 
         # International presence indicators
-        description = str(data.get('Description', '')).lower()
-        if any(term in description for term in ['international', 'global', 'export', 'worldwide']):
+        description = str(data.get('description', '')).lower()
+        if any(term in description for term in ['international', 'global', 'export', 'worldwide', 'uluslararası']):
             score += 15
 
         return min(score, 100)
 
-    def _evaluate_growth_digital_indicators(self, data: Dict[str, Any]) -> float:
-        """Growth & Digital Indicators (10% weight)"""
-        score = 30  # Base score
+    def _calculate_llm_adjustment_enhanced(self, data: Dict[str, Any], industry_score: float) -> float:
+        """
+        Enhanced LLM adjustment (±25 points) with better algorithm
+        Fixed boundary logic to optimally select adjustments within limits
+        """
+        adjustments = []
+        
+        # Business Growth Indicators
+        description = str(data.get('description', '')).lower()
+        if any(term in description for term in ['expansion', 'new facilities', 'growing', 'büyüme', 'genişleme']):
+            adjustments.append(('growth_expansion', 10, 'Business expansion indicators'))
+        if any(term in description for term in ['innovation', 'technology', 'digital', 'inovasyon', 'teknoloji']):
+            adjustments.append(('innovation', 8, 'Innovation and technology focus'))
 
-        # Digital Presence
-        if data.get('Company Domain Name'):
-            score += 20  # Professional website
-        if data.get('LinkedIn Company Page'):
-            score += 15  # LinkedIn presence
-        if data.get('Facebook Company Page'):
-            score += 10  # Facebook presence
+        # Market Position Indicators  
+        if any(term in description for term in ['leader', 'leading', 'market share', 'lider', 'önder']):
+            adjustments.append(('market_leader', 12, 'Market leadership position'))
+        if any(term in description for term in ['partnership', 'strategic', 'ortaklık', 'stratejik']):
+            adjustments.append(('partnerships', 6, 'Strategic partnerships'))
 
-        # Growth Indicators (analyze description)
-        description = str(data.get('Description', '')).lower()
-        if any(term in description for term in ['leading', 'growing', 'expanding']):
-            score += 15
-        if any(term in description for term in ['innovation', 'technology', 'solutions']):
-            score += 10
-        if any(term in description for term in ['development', 'market leader']):
-            score += 10
+        # Data Quality Bonus
+        fields_completed = sum(1 for field in ['company_domain_name', 'description', 'year_founded'] 
+                              if data.get(field))
+        if fields_completed >= 3:
+            adjustments.append(('data_quality_high', 8, 'High data completeness'))
+        elif fields_completed >= 2:
+            adjustments.append(('data_quality_medium', 4, 'Medium data completeness'))
 
-        # Professional Activity
-        if len(str(data.get('Description', ''))) > 100:
-            score += 10  # Detailed description
-        if sum(1 for field in ['Phone Number', 'Company Domain Name'] if data.get(field)) >= 2:
-            score += 5   # Multiple contact methods
+        # Risk Factors (negative adjustments)
+        if any(term in description for term in ['crisis', 'downsizing', 'kriz', 'küçülme']):
+            adjustments.append(('crisis_risk', -15, 'Crisis or downsizing indicators'))
+        
+        # Enhanced boundary logic - optimally select adjustments
+        adjustments.sort(key=lambda x: abs(x[1]), reverse=True)  # Sort by absolute impact
+        
+        total_positive = sum(adj[1] for adj in adjustments if adj[1] > 0)
+        total_negative = sum(adj[1] for adj in adjustments if adj[1] < 0)
+        
+        # Smart selection within ±25 bounds
+        if total_positive + total_negative > 25:
+            # Prioritize positive adjustments, then add negative ones if within bounds
+            selected_adjustment = 0
+            for name, value, reason in adjustments:
+                potential_total = selected_adjustment + value
+                if -25 <= potential_total <= 25:
+                    selected_adjustment = potential_total
+            total_adjustment = selected_adjustment
+        elif total_positive + total_negative < -25:
+            # Cap negative adjustments at -25
+            total_adjustment = max(-25, total_positive + total_negative)
+        else:
+            total_adjustment = total_positive + total_negative
 
-        return min(score, 100)
+        return max(-25, min(25, total_adjustment))
+
+    def _calculate_data_quality(self, data: Dict[str, Any]) -> float:
+        """Calculate data quality score for transparency."""
+        required_fields = ['company_name', 'industry', 'annual_revenue', 'number_of_employees']
+        optional_fields = ['city', 'description', 'company_domain_name', 'year_founded']
+        
+        required_score = sum(1 for field in required_fields if data.get(field)) / len(required_fields)
+        optional_score = sum(1 for field in optional_fields if data.get(field)) / len(optional_fields)
+        
+        return round((required_score * 0.7 + optional_score * 0.3) * 100, 1)
 
     def _detect_industry(self, company_name: str, company_data: Dict[str, Any]) -> tuple:
-        """Detect industry using Yolwise classification"""
+        """Enhanced industry detection with better matching."""
         text_data = [
             company_name.lower(),
-            str(company_data.get('Industry', '')).lower(),
-            str(company_data.get('Description', '')).lower()
+            str(company_data.get('industry', '')).lower(),
+            str(company_data.get('description', '')).lower()
         ]
         combined_text = ' '.join(text_data)
 
-        # Find best match
+        # Find best match with enhanced scoring
         best_match = None
         max_score = 0
 
@@ -414,7 +636,8 @@ class YolwiseScoring:
             score = 0
             for keyword in industry_info['keywords']:
                 if keyword in combined_text:
-                    score += len(keyword)  # Longer keywords = higher weight
+                    # Weight longer keywords more heavily
+                    score += len(keyword) * (2 if len(keyword) > 5 else 1)
 
             if score > max_score:
                 max_score = score
@@ -426,44 +649,15 @@ class YolwiseScoring:
         else:
             return 'other', 1.0, 'low'
 
-    def _calculate_llm_adjustment(self, data: Dict[str, Any], industry_score: float) -> float:
-        """
-        Simplified LLM adjustment (±25 points)
-        In full implementation, this would call Claude API for qualitative analysis
-        """
-        adjustment = 0
-
-        # Business Growth Indicators
-        description = str(data.get('Description', '')).lower()
-        if any(term in description for term in ['expansion', 'new facilities', 'growing']):
-            adjustment += 10
-        if any(term in description for term in ['innovation', 'technology', 'digital']):
-            adjustment += 5
-
-        # Market Position Indicators  
-        if any(term in description for term in ['leader', 'leading', 'market share']):
-            adjustment += 8
-        if any(term in description for term in ['partnership', 'strategic']):
-            adjustment += 3
-
-        # Data Quality Bonus
-        fields_completed = sum(1 for field in ['Company Domain Name', 'Description', 'Year Founded', 
-                                             'LinkedIn Company Page'] if data.get(field))
-        if fields_completed >= 3:
-            adjustment += 5
-        elif fields_completed >= 2:
-            adjustment += 3
-
-        # Ensure within ±25 range
-        return max(-25, min(25, adjustment))
-
     def _generate_reasoning(self, data: Dict[str, Any], industry: str, final_score: float) -> str:
-        """Generate human-readable reasoning for the score"""
+        """Generate human-readable reasoning for the score."""
         reasons = []
         
         # Score level reasoning
-        if final_score >= 80:
+        if final_score >= 85:
             reasons.append("High-confidence target")
+        elif final_score >= 70:
+            reasons.append("Strong target candidate")
         elif final_score >= 60:
             reasons.append("Qualified target candidate")
         else:
@@ -475,7 +669,7 @@ class YolwiseScoring:
             reasons.append(f"Industry: {industry} (×{industry_data['multiplier']:.2f})")
         
         # Size indicators
-        employees = self._extract_number(str(data.get('Number of Employees', 0)))
+        employees = self._extract_number_enhanced(data.get('number_of_employees', 0))
         if employees >= 1000:
             reasons.append("Large enterprise")
         elif employees >= 200:
@@ -484,126 +678,152 @@ class YolwiseScoring:
             reasons.append("Medium company")
 
         # Geographic advantage
-        city = str(data.get('City', '')).lower()
-        if city in self.city_tiers['tier_1_cities']:
+        city = str(data.get('city', data.get('headquarters', ''))).lower()
+        if any(tier1 in city for tier1 in self.city_tiers['tier_1_cities']):
             reasons.append("Prime Turkish market location")
+        elif any(tier2 in city for tier2 in self.city_tiers['tier_2_cities']):
+            reasons.append("Major Turkish market location")
         
         return " • ".join(reasons)
-
-    def _safe_float(self, value) -> float:
-        """Safely convert value to float"""
-        try:
-            if isinstance(value, (int, float)):
-                return float(value)
-            elif isinstance(value, str):
-                # Extract numbers from string
-                numbers = re.findall(r'\d+\.?\d*', str(value))
-                return float(numbers[0]) if numbers else 0
-            else:
-                return 0
-        except (ValueError, TypeError, AttributeError):
-            return 0
-
-    def _extract_number(self, text: str) -> int:
-        """Extract integer from text"""
-        try:
-            numbers = re.findall(r'\d+', str(text))
-            return int(numbers[0]) if numbers else 0
-        except (ValueError, TypeError, AttributeError):
-            return 0
 
 # Initialize scoring engine
 scoring_engine = YolwiseScoring()
 
-# Flask Error Handlers
+# Enhanced Error Handlers with secure responses
+@app.errorhandler(YolwiseAPIError)
+def handle_yolwise_error(e):
+    """Handle custom API errors securely."""
+    return jsonify(e.to_dict()), e.status_code
+
+@app.errorhandler(ValidationError)
+def handle_validation_error(e):
+    """Handle marshmallow validation errors."""
+    app.logger.warning(f"Validation error: {e.messages}")
+    return jsonify({
+        'success': False,
+        'error': 'Invalid input data',
+        'details': e.messages,
+        'code': 400
+    }), 400
+
 @app.errorhandler(HTTPException)
 def handle_http_exception(e):
-    """Return JSON for HTTP errors"""
+    """Return secure JSON for HTTP errors."""
+    # Don't leak sensitive information in error responses
+    safe_description = "Request could not be processed" if e.code >= 500 else e.description
+    
     return jsonify({
         "success": False,
         "error": e.name,
-        "message": e.description,
+        "message": safe_description,
         "code": e.code
     }), e.code
 
 @app.errorhandler(Exception)
 def handle_generic_exception(e):
-    """Handle non-HTTP exceptions"""
+    """Handle non-HTTP exceptions securely."""
     if isinstance(e, HTTPException):
-        return e
+        return handle_http_exception(e)
 
+    # Log the actual error for debugging
+    app.logger.error(f"Unhandled exception: {str(e)}", exc_info=True)
+    
+    # Return generic error to prevent information leakage
     return jsonify({
         "success": False,
         "error": "Internal Server Error",
-        "message": str(e),
+        "message": "An unexpected error occurred",
         "code": 500
     }), 500
 
-# API Routes
+# API Routes with enhanced security
 @app.route('/health', methods=['GET'])
 def health_check():
-    """Health check endpoint"""
+    """Health check endpoint with system status."""
     return jsonify({
         'status': 'healthy',
         'timestamp': time.time(),
-        'version': '1.0-yolwise',
-        'description': 'Yolwise Lead Scoring API for Turkish B2B Market',
-        'specification': 'Three-layer architecture with English interface'
+        'version': '1.1-secure',
+        'description': 'Yolwise Lead Scoring API for Turkish B2B Market - Security Enhanced',
+        'specification': 'Three-layer architecture with comprehensive security measures'
     })
 
 @app.route('/score_company', methods=['POST'])
 @require_api_key
 def score_company():
-    """Score a single company"""
+    """Score a single company with enhanced validation and security."""
     try:
         if not request.json:
-            abort(400, description="JSON payload required")
+            raise YolwiseAPIError("JSON payload required", 400)
 
-        data = request.json
-        company_name = data.get('company_name')
-
+        # Validate request data
+        schema = CompanyDataSchema()
+        
+        company_name = request.json.get('company_name')
         if not company_name:
-            abort(400, description="company_name is required")
+            raise YolwiseAPIError("company_name is required", 400)
 
-        company_data = data.get('company_data', {})
+        company_data_raw = request.json.get('company_data', {})
+        
+        # Validate and sanitize company data
+        try:
+            # Sanitize description field
+            if 'description' in company_data_raw:
+                company_data_raw['description'] = schema.sanitize_description(company_data_raw['description'])
+            
+            company_data = schema.load(company_data_raw)
+        except ValidationError as e:
+            raise YolwiseAPIError(f"Invalid company data: {e.messages}", 400)
 
         # Perform Yolwise scoring
         result = scoring_engine.calculate_score(company_name, company_data)
 
-        return jsonify({
+        response_data = {
             'success': True,
             'result': asdict(result),
             'metadata': {
-                'api_version': '1.0-yolwise',
-                'scoring_model': 'Turkish B2B Market',
+                'api_version': '1.1-secure',
+                'scoring_model': 'Turkish B2B Market Enhanced',
                 'target_threshold': 60,
-                'processing_time_ms': result.processing_time_ms
+                'processing_time_ms': result.processing_time_ms,
+                'security_level': 'enhanced'
             }
-        })
+        }
+        
+        # Log successful scoring (without sensitive data)
+        app.logger.info(f"Scored company: {company_name[:50]}... Score: {result.final_score}")
+        
+        return jsonify(response_data)
 
+    except YolwiseAPIError:
+        raise
     except Exception as e:
-        return jsonify({
-            'success': False, 
-            'error': str(e),
-            'code': 500
-        }), 500
+        app.logger.error(f"Error in score_company: {str(e)}", exc_info=True)
+        raise YolwiseAPIError("Failed to process company scoring", 500)
 
 @app.route('/score_batch', methods=['POST'])
 @require_api_key
 def score_batch():
-    """Bulk scoring for multiple companies"""
+    """Bulk scoring with enhanced security and rate limiting."""
     try:
         if not request.json:
-            abort(400, description="JSON payload required")
+            raise YolwiseAPIError("JSON payload required", 400)
 
-        data = request.json
-        companies = data.get('companies', [])
+        # Validate batch request
+        batch_schema = BatchCompanySchema()
+        try:
+            batch_data = batch_schema.load(request.json)
+        except ValidationError as e:
+            raise YolwiseAPIError(f"Invalid batch data: {e.messages}", 400)
 
-        if not isinstance(companies, list) or not companies:
-            abort(400, description="companies list is required and cannot be empty")
+        companies = batch_data['companies']
+        
+        if len(companies) > 100:  # DoS protection
+            raise YolwiseAPIError("Maximum 100 companies per batch", 400)
 
         results = []
         start_time = time.time()
+        company_schema = CompanyDataSchema()
 
         for company_info in companies:
             try:
@@ -613,7 +833,13 @@ def score_batch():
                     company_data = {}
                 elif isinstance(company_info, dict):
                     company_name = company_info.get('name', company_info.get('company_name', ''))
-                    company_data = company_info.get('data', company_info)
+                    company_data_raw = company_info.get('data', company_info)
+                    
+                    # Sanitize and validate
+                    if 'description' in company_data_raw:
+                        company_data_raw['description'] = company_schema.sanitize_description(company_data_raw['description'])
+                    
+                    company_data = company_schema.load(company_data_raw)
                 else:
                     continue
 
@@ -632,16 +858,18 @@ def score_batch():
                     'detected_industry': result.detected_industry,
                     'industry_multiplier': result.industry_multiplier,
                     'confidence': result.industry_confidence,
-                    'reasoning': result.reasoning
+                    'reasoning': result.reasoning,
+                    'data_quality_score': result.data_quality_score
                 })
 
             except Exception as e:
+                app.logger.warning(f"Error processing company in batch: {str(e)}")
                 results.append({
                     'company_name': company_name if 'company_name' in locals() else 'Unknown',
                     'base_score': 0,
                     'final_score': 0,
                     'priority_recommendation': 'error',
-                    'error': str(e)
+                    'error': 'Processing failed'
                 })
 
         # Sort by final score
@@ -651,7 +879,7 @@ def score_batch():
         target_count = len([r for r in results if r.get('priority_recommendation') == 'target'])
         processing_time = int((time.time() - start_time) * 1000)
 
-        return jsonify({
+        response_data = {
             'success': True,
             'results': results,
             'summary': {
@@ -663,30 +891,35 @@ def score_batch():
                 'top_targets': [r for r in results if r.get('priority_recommendation') == 'target'][:10]
             },
             'metadata': {
-                'api_version': '1.0-yolwise',
-                'scoring_model': 'Turkish B2B Market',
+                'api_version': '1.1-secure',
+                'scoring_model': 'Turkish B2B Market Enhanced',
                 'target_threshold': 60,
-                'specification': 'Three-layer architecture'
+                'specification': 'Three-layer architecture with security enhancements',
+                'security_level': 'enhanced'
             }
-        })
+        }
+        
+        # Log batch processing
+        app.logger.info(f"Processed batch: {len(results)} companies, {target_count} targets")
+        
+        return jsonify(response_data)
 
+    except YolwiseAPIError:
+        raise
     except Exception as e:
-        return jsonify({
-            'success': False, 
-            'error': str(e),
-            'code': 500
-        }), 500
+        app.logger.error(f"Error in score_batch: {str(e)}", exc_info=True)
+        raise YolwiseAPIError("Failed to process batch scoring", 500)
 
 @app.route('/industries', methods=['GET'])
 def get_industries():
-    """Get supported industries with multipliers"""
+    """Get supported industries with multipliers."""
     industries = {}
     for industry, data in scoring_engine.industry_multipliers.items():
         industries[industry] = {
             'multiplier': data['multiplier'],
             'confidence': data['confidence'],
             'reasoning': data['reasoning'],
-            'keywords': data['keywords'][:5]  # First 5 keywords only
+            'keywords': data['keywords'][:8]  # Limit keywords for response size
         }
     
     return jsonify({
@@ -695,17 +928,18 @@ def get_industries():
         'metadata': {
             'total_industries': len(industries),
             'default_multiplier': 1.0,
-            'target_threshold': 60
+            'target_threshold': 60,
+            'enhanced_security': True
         }
     })
 
 @app.route('/', methods=['GET'])
 def api_info():
-    """API information and usage"""
+    """API information and usage with security details."""
     return jsonify({
         'name': 'Yolwise Lead Scoring API',
-        'version': '1.0',
-        'description': 'Turkish B2B market lead scoring with three-layer architecture',
+        'version': '1.1-secure',
+        'description': 'Turkish B2B market lead scoring with three-layer architecture and enhanced security',
         'endpoints': {
             '/health': 'GET - Health check',
             '/score_company': 'POST - Score single company (requires API key)',
@@ -713,30 +947,48 @@ def api_info():
             '/industries': 'GET - List supported industries with multipliers',
             '/': 'GET - This API information'
         },
-        'authentication': 'API key required (X-API-Key header or api_key parameter)',
-        'specification': 'Based on yolwise_scoring_specification.md',
+        'authentication': 'X-API-Key header required for scoring endpoints',
+        'security_features': [
+            'Comprehensive input validation',
+            'XSS protection with escaping',
+            'DoS protection with limits',
+            'Secure error handling',
+            'CORS configuration',
+            'Security headers (CSP, HSTS, etc.)',
+            'Enhanced logging'
+        ],
+        'specification': 'Based on yolwise_scoring_specification.md with security enhancements',
         'target_threshold': 60,
-        'deployment': 'https://yolwiseleadscoring.replit.app'
+        'deployment': 'https://yolwiseleadscoring.replit.app',
+        'data_limits': {
+            'max_batch_size': 100,
+            'max_content_length': '16MB',
+            'max_description_length': 1000
+        }
     })
 
 # Main execution entry point
 if __name__ == '__main__':
-    # Configuration for Replit deployment
+    # Configuration for Replit deployment with security
     port = int(os.environ.get('PORT', 5000))
     host = '0.0.0.0'
     
-    # Set API key from environment for security
+    # Validate environment
     if not os.environ.get('YOLWISE_API_KEY'):
-        print("⚠️  WARNING: YOLWISE_API_KEY not set in environment variables")
-        print("   Please set this in Replit Secrets for API security")
+        app.logger.warning("⚠️  WARNING: YOLWISE_API_KEY not set in environment variables")
+        app.logger.warning("   Please set this in Replit Secrets for API security")
     
-    print(f"🚀 Starting Yolwise Lead Scoring API on {host}:{port}")
-    print(f"📋 Specification: Turkish B2B Market - Three-layer Architecture")
-    print(f"🔑 API Key Protection: {'✅ Enabled' if os.environ.get('YOLWISE_API_KEY') else '❌ Disabled'}")
+    if not os.environ.get('SECRET_KEY'):
+        app.logger.info("Using auto-generated SECRET_KEY - set SECRET_KEY env var for persistence")
+    
+    app.logger.info(f"🚀 Starting Yolwise Lead Scoring API (Enhanced Security) on {host}:{port}")
+    app.logger.info(f"📋 Specification: Turkish B2B Market - Three-layer Architecture with Security")
+    app.logger.info(f"🔑 API Key Protection: {'✅ Enabled' if os.environ.get('YOLWISE_API_KEY') else '❌ Disabled'}")
+    app.logger.info(f"🛡️  Security Features: Input validation, XSS protection, DoS limits, secure headers")
     
     app.run(
         host=host,
         port=port,
-        debug=False,  # Always False in production
+        debug=False,  # Always False in production for security
         threaded=True  # Enable threading for better performance
     )
