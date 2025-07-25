@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Yolwise Lead Scoring</title>
+  <link rel="stylesheet" href="https://ssl.gstatic.com/docs/script/css/add-ons1.css">
+  <style>
+    body {
+      font-family: "Google Sans", Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f8f9fa;
+    }
+
+    .container {
+      max-width: 550px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      padding: 24px;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+
+    .header h2 {
+      color: #1a73e8;
+      margin: 0 0 8px 0;
+      font-size: 24px;
+      font-weight: 400;
+    }
+
+    .header p {
+      color: #5f6368;
+      margin: 0;
+      font-size: 14px;
+    }
+
+    .turkish-badge {
+      background: linear-gradient(135deg, #e74c3c, #ffffff);
+      color: #e74c3c;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-top: 8px;
+      display: inline-block;
+      border: 2px solid #e74c3c;
+    }
+
+    .continuation-banner {
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      border-radius: 4px;
+      padding: 16px;
+      margin-bottom: 20px;
+      display: none;
+      animation: slideIn 0.3s ease-out;
+    }
+
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateY(-10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .continuation-banner h4 {
+      margin: 0 0 12px 0;
+      color: #856404;
+      font-size: 16px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .continuation-banner p {
+      margin: 0 0 16px 0;
+      font-size: 14px;
+      color: #856404;
+      line-height: 1.4;
+    }
+
+    .continuation-buttons {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-start;
+    }
+
+    .loading-state {
+      display: none;
+      color: #856404;
+      font-size: 14px;
+      text-align: center;
+      padding: 8px;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 8px;
+      color: #3c4043;
+      font-weight: 500;
+      font-size: 14px;
+    }
+
+    .form-group select,
+    .form-group input {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+
+    .form-group select:focus,
+    .form-group input:focus {
+      outline: none;
+      border-color: #1a73e8;
+      box-shadow: 0 0 0 1px #1a73e8;
+    }
+
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .checkbox-group input[type="checkbox"] {
+      width: auto;
+      margin-right: 8px;
+    }
+
+    .checkbox-group label {
+      margin: 0;
+      font-size: 14px;
+      color: #3c4043;
+    }
+
+    .info-box {
+      background: #e8f0fe;
+      border: 1px solid #d2e3fc;
+      border-radius: 4px;
+      padding: 12px;
+      margin-bottom: 20px;
+    }
+
+    .info-box h4 {
+      margin: 0 0 8px 0;
+      color: #1a73e8;
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .info-box ul {
+      margin: 0;
+      padding-left: 20px;
+      font-size: 13px;
+      color: #5f6368;
+    }
+
+    .turkish-features {
+      background: #f8f4e6;
+      border: 1px solid #f39c12;
+      border-radius: 4px;
+      padding: 12px;
+      margin-bottom: 20px;
+    }
+
+    .turkish-features h4 {
+      margin: 0 0 8px 0;
+      color: #e67e22;
+      font-size: 14px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .buttons {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+      margin-top: 24px;
+    }
+
+    .btn {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-primary {
+      background: #1a73e8;
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: #1557b0;
+    }
+
+    .btn-primary:disabled {
+      background: #dadce0;
+      color: #9aa0a6;
+      cursor: not-allowed;
+    }
+
+    .btn-warning {
+      background: #ffc107;
+      color: #000;
+      font-weight: 600;
+    }
+
+    .btn-warning:hover {
+      background: #e0a800;
+    }
+
+    .btn-secondary {
+      background: #f8f9fa;
+      color: #3c4043;
+      border: 1px solid #dadce0;
+    }
+
+    .btn-secondary:hover {
+      background: #f1f3f4;
+    }
+
+    .btn-small {
+      padding: 8px 16px;
+      font-size: 13px;
+    }
+
+    .progress {
+      display: none;
+      text-align: center;
+      margin-top: 20px;
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 6px;
+      background: #e8eaed;
+      border-radius: 3px;
+      margin: 16px 0;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #1a73e8, #4285f4);
+      width: 0%;
+      transition: width 0.5s ease;
+    }
+
+    .progress-text {
+      font-size: 14px;
+      color: #5f6368;
+      margin-bottom: 8px;
+    }
+
+    .results {
+      display: none;
+      margin-top: 20px;
+      padding: 16px;
+      background: #e8f5e8;
+      border: 1px solid #c8e6c9;
+      border-radius: 4px;
+    }
+
+    .results.error {
+      background: #fce8e6;
+      border-color: #f28b82;
+    }
+
+    .results h4 {
+      margin: 0 0 8px 0;
+      color: #137333;
+      font-size: 16px;
+    }
+
+    .results.error h4 {
+      color: #d93025;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .stat-item {
+      text-align: center;
+      padding: 10px;
+      background: white;
+      border-radius: 4px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .stat-number {
+      font-size: 22px;
+      font-weight: 600;
+      color: #1a73e8;
+    }
+
+    .stat-label {
+      font-size: 12px;
+      color: #5f6368;
+      margin-top: 4px;
+    }
+
+    .warning {
+      color: #f9ab00;
+      font-size: 13px;
+      margin-top: 8px;
+    }
+
+    .loading-animation {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid #f3f3f3;
+      border-top: 2px solid #1a73e8;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-right: 8px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .icon {
+      width: 16px;
+      height: 16px;
+      display: inline-block;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h2>🎯 Yolwise Lead Scoring</h2>
+      <p>Türk B2B pazarı için Claude AI ile otomatik şirket analizi ve skorlaması</p>
+      <div class="turkish-badge">🇹🇷 Türk B2B Pazarı Özelinde</div>
+    </div>
+
+    <!-- Enhanced Continuation Banner -->
+    <div class="continuation-banner" id="continuationBanner">
+      <h4>
+        <span class="icon">🔄</span>
+        Tamamlanmamış işleme bulundu
+      </h4>
+      <p id="continuationText">Durum kontrol ediliyor...</p>
+      <div class="continuation-buttons" id="continuationButtons">
+        <button type="button" class="btn btn-warning btn-small" id="continueBtn" disabled>
+          <span class="loading-animation" style="display: none;"></span>
+          Devam Et
+        </button>
+        <button type="button" class="btn btn-secondary btn-small" id="clearStateBtn">
+          Yeniden Başla
+        </button>
+      </div>
+      <div class="loading-state" id="loadingState">
+        <div class="loading-animation"></div>
+        Durum yükleniyor...
+      </div>
+    </div>
+
+    <form id="scoringForm">
+      <div class="form-group">
+        <label for="dataRange">Veri Aralığı:</label>
+        <select id="dataRange" required>
+          <option value="">Aralıklar yükleniyor...</option>
+        </select>
+      </div>
+
+      <div class="info-box">
+        <h4>📋 Önerilen Sütunlar:</h4>
+        <ul>
+          <li><strong>Zorunlu:</strong> Şirket Adı / Company Name</li>
+          <li><strong>Önerilen:</strong> Sektör, Gelir, Çalışan Sayısı, Şehir</li>
+          <li><strong>Ek:</strong> Şirket Türü, Web Sitesi, Faaliyet</li>
+        </ul>
+      </div>
+
+      <div class="turkish-features">
+        <h4>🇹🇷 Türk B2B Pazarı Özellikleri</h4>
+        <ul style="margin: 8px 0 0 20px; padding: 0; font-size: 13px; color: #8b4513;">
+          <li>Türk iş terminolojisi ve yasal formlar desteklenir</li>
+          <li>A.Ş., Ltd.Şti. gibi Türk şirket türleri tanınır</li>
+          <li>TL bazlı gelir değerlendirmesi yapılır</li>
+          <li>İstanbul, Ankara, İzmir odaklı coğrafi analiz</li>
+          <li>Türk B2B hizmet ihtiyaçlarına göre skorlama</li>
+        </ul>
+      </div>
+
+      <div class="checkbox-group">
+        <input type="checkbox" id="detailedLogging">
+        <label for="detailedLogging">Detaylı günlük kaydı (hata ayıklama için)</label>
+      </div>
+
+      <div class="buttons">
+        <button type="button" class="btn btn-secondary" onclick="google.script.host.close()">
+          İptal
+        </button>
+        <button type="submit" class="btn btn-primary" id="startBtn">
+          Analizi Başlat
+        </button>
+      </div>
+    </form>
+
+    <div class="progress" id="progressSection">
+      <div class="progress-text" id="progressText">Hazırlanıyor...</div>
+      <div class="progress-bar">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+    </div>
+
+    <div class="results" id="resultsSection">
+      <h4 id="resultsTitle">Analiz tamamlandı!</h4>
+      <div id="resultsContent"></div>
+    </div>
+  </div>
+
+  <script>
+    // Global variables
+    let isProcessing = false;
+    let processingInterval;
+    let processingState = null;
+
+    // Initialize the interface
+    document.addEventListener('DOMContentLoaded', function() {
+      console.log('DOM loaded, initializing Yolwise interface...');
+      loadAvailableRanges();
+      setupEventListeners();
+      
+      // Check for processing state with slight delay
+      setTimeout(() => {
+        checkProcessingState();
+      }, 500);
+    });
+
+    function setupEventListeners() {
+      document.getElementById('scoringForm').addEventListener('submit', handleFormSubmit);
+      document.getElementById('continueBtn').addEventListener('click', handleContinue);
+      document.getElementById('clearStateBtn').addEventListener('click', handleClearState);
+    }
+
+    function loadAvailableRanges() {
+      const select = document.getElementById('dataRange');
+      select.innerHTML = '<option value="">Yükleniyor...</option>';
+
+      google.script.run
+        .withSuccessHandler(populateRanges)
+        .withFailureHandler(handleRangeError)
+        .getAvailableRanges();
+    }
+
+    function populateRanges(ranges) {
+      const select = document.getElementById('dataRange');
+      select.innerHTML = '';
+
+      if (ranges.length === 0) {
+        select.innerHTML = '<option value="">Veri bulunamadı</option>';
+        document.getElementById('startBtn').disabled = true;
+        return;
+      }
+
+      ranges.forEach(range => {
+        const option = document.createElement('option');
+        option.value = range.value;
+        option.textContent = range.label;
+        option.title = range.description;
+        select.appendChild(option);
+      });
+
+      // Select the first range by default
+      if (ranges.length > 0) {
+        select.value = ranges[0].value;
+      }
+    }
+
+    function handleRangeError(error) {
+      const select = document.getElementById('dataRange');
+      select.innerHTML = '<option value="">Veri yükleme hatası</option>';
+      showError('Aralık yükleme hatası: ' + error.message);
+    }
+
+    /**
+     * Check for existing processing state on load
+     */
+    function checkProcessingState() {
+      console.log('Checking for processing state...');
+      
+      // Show loading state
+      const banner = document.getElementById('continuationBanner');
+      const loadingState = document.getElementById('loadingState');
+      const buttons = document.getElementById('continuationButtons');
+      
+      banner.style.display = 'block';
+      loadingState.style.display = 'block';
+      buttons.style.display = 'none';
+      
+      google.script.run
+        .withSuccessHandler(function(state) {
+          console.log('Processing state check result:', state);
+          loadingState.style.display = 'none';
+          
+          if (state) {
+            processingState = state;
+            showContinuationBanner(state);
+          } else {
+            // No state found, hide banner
+            banner.style.display = 'none';
+          }
+        })
+        .withFailureHandler(function(error) {
+          console.log('No processing state found or error:', error.message);
+          loadingState.style.display = 'none';
+          banner.style.display = 'none';
+        })
+        .checkProcessingState();
+    }
+
+    /**
+     * Show the continuation banner with Turkish processing details
+     */
+    function showContinuationBanner(state) {
+      console.log('Showing continuation banner for state:', state);
+      
+      const banner = document.getElementById('continuationBanner');
+      const text = document.getElementById('continuationText');
+      const buttons = document.getElementById('continuationButtons');
+      const continueBtn = document.getElementById('continueBtn');
+      
+      const progress = state.processedRows || 0;
+      const total = state.results ? state.results.total : 'bilinmiyor';
+      const successful = state.results ? state.results.successful : 0;
+      const failed = state.results ? state.results.failed : 0;
+      
+      // Create detailed progress text in Turkish
+      const progressPercent = total !== 'bilinmiyor' ? Math.round((progress / total) * 100) : 0;
+      
+      text.innerHTML = `
+        <strong>İlerleme:</strong> ${progress} / ${total} şirket işlendi (${progressPercent}%)<br>
+        <strong>Başarılı:</strong> ${successful} • <strong>Hata:</strong> ${failed}<br>
+        <small>${progress + 1}. satırdan devam edebilir veya yeniden başlatabilirsiniz.</small>
+      `;
+      
+      // Enable continue button and show buttons
+      continueBtn.disabled = false;
+      buttons.style.display = 'flex';
+      banner.style.display = 'block';
+    }
+
+    /**
+     * Hide the continuation banner
+     */
+    function hideContinuationBanner() {
+      document.getElementById('continuationBanner').style.display = 'none';
+      processingState = null;
+    }
+
+    /**
+     * Handle continue button click
+     */
+    function handleContinue() {
+      console.log('Continue button clicked');
+      
+      if (!processingState) {
+        showError('Devam ettirilecek durum bulunamadı');
+        return;
+      }
+
+      // Update UI to show continuation in progress
+      const continueBtn = document.getElementById('continueBtn');
+      const loadingAnim = continueBtn.querySelector('.loading-animation');
+      
+      continueBtn.disabled = true;
+      loadingAnim.style.display = 'inline-block';
+      continueBtn.innerHTML = '<span class="loading-animation"></span>Devam ediliyor...';
+      
+      // Hide the banner and start continuation
+      setTimeout(() => {
+        hideContinuationBanner();
+      }, 1000);
+      
+      isProcessing = true;
+      document.getElementById('startBtn').disabled = true;
+      document.getElementById('progressSection').style.display = 'block';
+      document.getElementById('resultsSection').style.display = 'none';
+
+      simulateProgress();
+
+      google.script.run
+        .withSuccessHandler(handleSuccess)
+        .withFailureHandler(handleContinuationError)
+        .continueProcessing();
+    }
+
+    /**
+     * Handle errors specific to continuation
+     */
+    function handleContinuationError(error) {
+      clearInterval(processingInterval);
+      
+      document.getElementById('progressSection').style.display = 'none';
+      
+      // Show error with continuation context
+      showError('Devam etme hatası: ' + error.message + '\\n\\n"Yeniden Başla" seçeneğini deneyebilir veya ayrıntılar için günlükleri kontrol edebilirsiniz.');
+      
+      resetForm();
+      
+      // Re-check processing state after a delay
+      setTimeout(() => {
+        checkProcessingState();
+      }, 3000);
+    }
+
+    /**
+     * Handle clear state button click
+     */
+    function handleClearState() {
+      console.log('Clear state button clicked');
+      
+      const clearBtn = document.getElementById('clearStateBtn');
+      clearBtn.disabled = true;
+      clearBtn.textContent = 'Temizleniyor...';
+      
+      google.script.run
+        .withSuccessHandler(function() {
+          hideContinuationBanner();
+          showInfoMessage('İşleme durumu temizlendi. Yeni analiz başlatabilirsiniz.');
+          clearBtn.disabled = false;
+          clearBtn.textContent = 'Yeniden Başla';
+        })
+        .withFailureHandler(function(error) {
+          showError('Durum temizleme hatası: ' + error.message);
+          clearBtn.disabled = false;
+          clearBtn.textContent = 'Yeniden Başla';
+        })
+        .clearProcessingState();
+    }
+
+    function handleFormSubmit(e) {
+      e.preventDefault();
+      
+      if (isProcessing) {
+        return;
+      }
+
+      const options = {
+        dataRange: document.getElementById('dataRange').value,
+        detailedLogging: document.getElementById('detailedLogging').checked
+      };
+
+      if (!options.dataRange) {
+        showError('Lütfen bir veri aralığı seçin');
+        return;
+      }
+
+      // Clear any existing processing state when starting fresh
+      if (processingState) {
+        hideContinuationBanner();
+      }
+
+      startProcessing(options);
+    }
+
+    function startProcessing(options) {
+      isProcessing = true;
+      
+      // Update UI
+      document.getElementById('startBtn').disabled = true;
+      document.getElementById('startBtn').innerHTML = '<div class="loading-animation"></div>İşleniyor...';
+      document.getElementById('progressSection').style.display = 'block';
+      document.getElementById('resultsSection').style.display = 'none';
+
+      // Start progress simulation
+      simulateProgress();
+
+      // Call the backend
+      google.script.run
+        .withSuccessHandler(handleSuccess)
+        .withFailureHandler(handleError)
+        .processLeadScoring(options);
+    }
+
+    function simulateProgress() {
+      let progress = 0;
+      const progressFill = document.getElementById('progressFill');
+      const progressText = document.getElementById('progressText');
+      
+      const turkishMessages = [
+        'Türk şirket verisi analizi başlatılıyor...',
+        'Şirket bilgileri işleniyor...',
+        'Claude API ile Türk B2B analizi...',
+        'Yolwise API ile skorlama...',
+        'LLM düzeltmeleri uygulanıyor...',
+        'Sonuçlar kaydediliyor...'
+      ];
+
+      processingInterval = setInterval(() => {
+        progress += Math.random() * 12;
+        if (progress > 85) {
+          progress = 85; // Don't go to 100% until actually complete
+        }
+
+        progressFill.style.width = progress + '%';
+        
+        const messageIndex = Math.floor((progress / 100) * (turkishMessages.length - 1));
+        progressText.textContent = turkishMessages[messageIndex] || turkishMessages[turkishMessages.length - 1];
+      }, 1200);
+    }
+
+    function handleSuccess(results) {
+      clearInterval(processingInterval);
+      
+      // Complete progress
+      document.getElementById('progressFill').style.width = '100%';
+      document.getElementById('progressText').textContent = 'Tamamlandı!';
+      
+      setTimeout(() => {
+        document.getElementById('progressSection').style.display = 'none';
+        
+        if (results.incomplete && results.continuationAvailable) {
+          // Show partial results and enable continuation
+          showPartialResults(results);
+          setTimeout(() => {
+            checkProcessingState(); // Refresh continuation banner
+          }, 2000);
+        } else if (results.message && results.type === 'info') {
+          showInfoMessage(results.message);
+        } else {
+          showResults(results);
+        }
+        
+        resetForm();
+      }, 1500);
+    }
+
+    function handleError(error) {
+      clearInterval(processingInterval);
+      
+      document.getElementById('progressSection').style.display = 'none';
+      
+      // Check if this is a timeout error
+      if (error.message && (error.message.includes('timeout') || error.message.includes('zaman'))) {
+        showError('Zaman aşımı. Durum kaydedildi - işlemi tamamlamak için "Devam Et" butonunu kullanın.');
+        
+        // Re-check for processing state
+        setTimeout(() => {
+          checkProcessingState();
+        }, 2000);
+      } else {
+        showError('Bir hata oluştu: ' + error.message);
+      }
+      
+      resetForm();
+    }
+
+    function showPartialResults(results) {
+      const resultsSection = document.getElementById('resultsSection');
+      const resultsTitle = document.getElementById('resultsTitle');
+      const resultsContent = document.getElementById('resultsContent');
+      
+      resultsSection.className = 'results';
+      resultsSection.style.display = 'block';
+      resultsTitle.textContent = 'Kısmi Sonuçlar';
+      
+      const processedRate = results.total > 0 ? Math.round((results.processed / results.total) * 100) : 0;
+      
+      resultsContent.innerHTML = `
+        <p><strong>${results.message}</strong></p>
+        <div class="stats">
+          <div class="stat-item">
+            <div class="stat-number">${results.processed}</div>
+            <div class="stat-label">İşlendi</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-number">${results.total - results.processed}</div>
+            <div class="stat-label">Kaldı</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-number">${processedRate}%</div>
+            <div class="stat-label">İlerleme</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-number">${results.successful}</div>
+            <div class="stat-label">Başarılı</div>
+          </div>
+        </div>
+        <p style="margin-top: 16px; color: #1a73e8;">
+          <strong>İşleme bir sonraki çalıştırmada otomatik olarak devam edecek.</strong>
+        </p>
+      `;
+    }
+
+    function showResults(results) {
+      const resultsSection = document.getElementById('resultsSection');
+      const resultsContent = document.getElementById('resultsContent');
+      
+      resultsSection.className = 'results';
+      resultsSection.style.display = 'block';
+
+      const targetRate = results.total > 0 ? Math.round((results.successful / results.total) * 100) : 0;
+      
+      resultsContent.innerHTML = `
+        <div class="stats">
+          <div class="stat-item">
+            <div class="stat-number">${results.total}</div>
+            <div class="stat-label">Toplam Şirket</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-number">${results.successful}</div>
+            <div class="stat-label">Başarıyla İşlendi</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-number">${results.failed}</div>
+            <div class="stat-label">Hata</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-number">${targetRate}%</div>
+            <div class="stat-label">Başarı</div>
+          </div>
+        </div>
+        <p>Sonuçlar tabloya eklendi. Verilerinizin sağındaki yeni sütunları kontrol edin.</p>
+        ${results.failed > 0 ? '<div class="warning">⚠️ Bazı şirketler işlenemedi. Ayrıntılar için günlükleri kontrol edin.</div>' : ''}
+      `;
+    }
+
+    function showError(message) {
+      const resultsSection = document.getElementById('resultsSection');
+      const resultsTitle = document.getElementById('resultsTitle');
+      const resultsContent = document.getElementById('resultsContent');
+      
+      resultsSection.className = 'results error';
+      resultsSection.style.display = 'block';
+      resultsTitle.textContent = 'Bir hata oluştu';
+      resultsContent.innerHTML = `<p>${message.replace(/\\n/g, '<br>')}</p>`;
+    }
+
+    function showInfoMessage(message) {
+      const resultsSection = document.getElementById('resultsSection');
+      const resultsTitle = document.getElementById('resultsTitle');
+      const resultsContent = document.getElementById('resultsContent');
+      
+      resultsSection.className = 'results';
+      resultsSection.style.display = 'block';
+      resultsTitle.textContent = 'Bilgi';
+      resultsContent.innerHTML = `<p>${message}</p>`;
+    }
+
+    function resetForm() {
+      isProcessing = false;
+      document.getElementById('startBtn').disabled = false;
+      document.getElementById('startBtn').innerHTML = 'Analizi Başlat';
+    }
+
+    // Helper functions for development/testing
+    function testConnection() {
+      google.script.run
+        .withSuccessHandler(function(result) {
+          console.log('Connection test successful:', result);
+        })
+        .withFailureHandler(function(error) {
+          console.error('Connection test failed:', error);
+        })
+        .testYolwiseApiConnections();
+    }
+  </script>
+</body>
+</html>
