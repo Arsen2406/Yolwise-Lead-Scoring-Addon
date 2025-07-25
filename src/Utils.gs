@@ -116,6 +116,474 @@ function setupYolwiseApiKeysManual() {
 }
 
 /**
+ * MISSING FUNCTION: Extract Turkish company data using structured mapping
+ * @param {Array} row Row data from spreadsheet
+ * @param {Array} headers Column headers
+ * @returns {Object} Extracted company data
+ */
+function extractTurkishCompanyDataStructured(row, headers) {
+  const data = {};
+  
+  try {
+    // Enhanced field mappings with Turkish support
+    const turkishFieldMappings = {
+      'company_name': {
+        keywords: ['şirket adı', 'şirket unvanı', 'firma adı', 'company name', 'company', 'name', 'firm'],
+        maxLength: 200,
+        required: true
+      },
+      'industry': {
+        keywords: ['sektör', 'faaliyet sektörü', 'iş alanı', 'industry', 'sector', 'business', 'field'],
+        maxLength: 100,
+        required: false
+      },
+      'revenue_estimate': {
+        keywords: ['yıllık gelir', 'yıllık ciro', 'gelir', 'ciro', 'annual revenue', 'revenue', 'sales', 'turnover'],
+        maxLength: 50,
+        required: false,
+        numeric: true
+      },
+      'employees_estimate': {
+        keywords: ['çalışan sayısı', 'personel sayısı', 'işçi sayısı', 'number of employees', 'employees', 'staff', 'workforce'],
+        maxLength: 50,
+        required: false
+      },
+      'headquarters': {
+        keywords: ['şehir', 'il', 'merkez', 'merkez il', 'ana merkez', 'city', 'location', 'headquarters', 'head office'],
+        maxLength: 100,
+        required: false
+      },
+      'description': {
+        keywords: ['açıklama', 'tanım', 'faaliyet', 'ana faaliyet', 'description', 'about', 'overview', 'summary'],
+        maxLength: 1000,
+        required: false
+      }
+    };
+    
+    const mappedHeaders = new Set();
+    
+    // Enhanced extraction with Turkish language support
+    headers.forEach((header, index) => {
+      if (!header || index >= row.length) return;
+      
+      const normalizedHeader = header.toString().toLowerCase().trim();
+      const cellValue = row[index];
+      
+      // Skip empty or null values
+      if (!cellValue || cellValue.toString().trim() === '') return;
+      
+      for (const [field, config] of Object.entries(turkishFieldMappings)) {
+        if (config.keywords.some(keyword => normalizedHeader.includes(keyword))) {
+          let processedValue = cellValue.toString().trim();
+          
+          // Apply security constraints
+          if (config.maxLength && processedValue.length > config.maxLength) {
+            processedValue = processedValue.substring(0, config.maxLength);
+          }
+          
+          // Numeric validation for Turkish numbers
+          if (config.numeric) {
+            const numericValue = extractTurkishNumericValue(processedValue);
+            processedValue = numericValue;
+          }
+          
+          data[field] = processedValue;
+          mappedHeaders.add(index);
+          break;
+        }
+      }
+    });
+    
+    // Enhanced categorization for unmapped Turkish fields
+    const turkishCategories = {
+      financial_data: [],
+      legal_data: [], 
+      operational_data: [],
+      contact_data: [],
+      other_data: []
+    };
+    
+    headers.forEach((header, index) => {
+      if (!mappedHeaders.has(index) && row[index] && row[index].toString().trim() !== '') {
+        const headerLower = header.toString().toLowerCase().trim();
+        const value = row[index].toString().trim();
+        
+        // Security: limit entry length
+        const safeValue = value.length > 200 ? value.substring(0, 200) + '...' : value;
+        const entry = `${header}: ${safeValue}`;
+        
+        // Enhanced Turkish categorization
+        if (headerLower.includes('gelir') || headerLower.includes('ciro') || headerLower.includes('mali') || 
+            headerLower.includes('revenue') || headerLower.includes('financial')) {
+          turkishCategories.financial_data.push(entry);
+        } else if (headerLower.includes('yasal') || headerLower.includes('lisans') || headerLower.includes('kayıt') ||
+                   headerLower.includes('legal') || headerLower.includes('license')) {
+          turkishCategories.legal_data.push(entry);
+        } else if (headerLower.includes('iletişim') || headerLower.includes('telefon') || headerLower.includes('email') ||
+                   headerLower.includes('contact') || headerLower.includes('phone')) {
+          turkishCategories.contact_data.push(entry);
+        } else if (headerLower.includes('operasyon') || headerLower.includes('şube') || headerLower.includes('ofis') ||
+                   headerLower.includes('operation') || headerLower.includes('branch') || headerLower.includes('office')) {
+          turkishCategories.operational_data.push(entry);
+        } else {
+          turkishCategories.other_data.push(entry);
+        }
+      }
+    });
+    
+    // Combine categorized data with limits
+    const discoveredFacts = [];
+    Object.entries(turkishCategories).forEach(([category, items]) => {
+      if (items.length > 0) {
+        // Limit items per category for security
+        const limitedItems = items.slice(0, 10);
+        discoveredFacts.push(`${category}: ${limitedItems.join('; ')}`);
+      }
+    });
+    
+    data.discovered_facts = discoveredFacts;
+    
+    Logger.log(`✅ Turkish structured extraction completed for: ${data.company_name || 'Unknown company'}`);
+    
+    return data;
+    
+  } catch (error) {
+    Logger.log('❌ Error in Turkish structured extraction: ' + error.toString());
+    return {
+      company_name: 'Extraction Error',
+      extraction_error: error.message
+    };
+  }
+}
+
+/**
+ * MISSING FUNCTION: Extract numeric value from Turkish formatted text
+ * @param {string} text Text containing potential numeric value
+ * @returns {number} Extracted numeric value or 0
+ */
+function extractTurkishNumericValue(text) {
+  try {
+    if (typeof text === 'number') return Math.max(0, text);
+    
+    const textStr = text.toString().trim();
+    
+    // Handle Turkish multipliers
+    let multiplier = 1;
+    if (textStr.toLowerCase().includes('milyon') || textStr.toLowerCase().includes('million') || textStr.toLowerCase().includes('m')) {
+      multiplier = 1000000;
+    } else if (textStr.toLowerCase().includes('bin') || textStr.toLowerCase().includes('thousand') || textStr.toLowerCase().includes('k')) {
+      multiplier = 1000;
+    } else if (textStr.toLowerCase().includes('milyar') || textStr.toLowerCase().includes('billion') || textStr.toLowerCase().includes('b')) {
+      multiplier = 1000000000;
+    }
+    
+    // Extract first number (handle Turkish decimal separator)
+    const match = textStr.replace(',', '.').match(/(\\d+(?:\\.\\d+)?)/);
+    if (match) {
+      return Math.max(0, parseFloat(match[1]) * multiplier);
+    }
+    
+    return 0;
+  } catch (error) {
+    Logger.log('❌ Error extracting Turkish numeric value: ' + error.toString());
+    return 0;
+  }
+}
+
+/**
+ * MISSING FUNCTION: Create mock scoring for Yolwise when API is unavailable
+ * @param {Object} claudeAnalysis Claude analysis data
+ * @returns {Object} Mock scoring result
+ */
+function createYolwiseMockScoring(claudeAnalysis) {
+  Logger.log('🔧 Creating Yolwise mock scoring for Turkish B2B market');
+  
+  try {
+    // Enhanced Turkish industry modifiers
+    const turkishIndustryModifiers = {
+      'finans': { multiplier: 1.20, confidence: 'high' },
+      'bankacılık': { multiplier: 1.20, confidence: 'high' },
+      'lojistik': { multiplier: 1.17, confidence: 'high' },
+      'nakliye': { multiplier: 1.17, confidence: 'high' },
+      'enerji': { multiplier: 1.15, confidence: 'high' },
+      'elektrik': { multiplier: 1.15, confidence: 'high' },
+      'gıda': { multiplier: 1.10, confidence: 'medium' },
+      'kimya': { multiplier: 1.05, confidence: 'medium' },
+      'inşaat': { multiplier: 0.88, confidence: 'low' },
+      'yapı': { multiplier: 0.88, confidence: 'low' },
+      'perakende': { multiplier: 0.90, confidence: 'low' },
+      'otomotiv': { multiplier: 0.85, confidence: 'low' },
+      'teknoloji': { multiplier: 0.80, confidence: 'low' },
+      'yazılım': { multiplier: 0.80, confidence: 'low' },
+      'sağlık': { multiplier: 0.75, confidence: 'low' },
+      'hastane': { multiplier: 0.75, confidence: 'low' },
+      'telekomünikasyon': { multiplier: 1.00, confidence: 'medium' },
+      'beyaz eşya': { multiplier: 0.85, confidence: 'low' },
+      'çelik': { multiplier: 1.02, confidence: 'medium' }
+    };
+    
+    // Enhanced base score calculation
+    let baseScore = 50; // Default baseline for Turkish market
+    
+    // Adjust based on analysis confidence
+    const analysisConfidence = claudeAnalysis.analysis_confidence || 'orta';
+    if (analysisConfidence === 'düşük' || analysisConfidence === 'low') {
+      baseScore = Math.max(25, baseScore - 15);
+    } else if (analysisConfidence === 'yüksek' || analysisConfidence === 'high') {
+      baseScore = Math.min(85, baseScore + 15);
+    }
+    
+    // Enhanced B2B service potential scoring for Turkish market
+    if (claudeAnalysis.b2b_service_potential) {
+      const potentialText = claudeAnalysis.b2b_service_potential.toLowerCase();
+      if (potentialText.includes('yüksek') || potentialText.includes('high') || potentialText.includes('güçlü')) {
+        baseScore += 20;
+      } else if (potentialText.includes('orta') || potentialText.includes('medium') || potentialText.includes('moderate')) {
+        baseScore += 8;
+      } else if (potentialText.includes('düşük') || potentialText.includes('low') || potentialText.includes('limited')) {
+        baseScore -= 12;
+      }
+    }
+    
+    // Enhanced industry detection and scoring for Turkish context
+    const industryText = (claudeAnalysis.industry || '').toLowerCase();
+    let detectedIndustry = 'other';
+    let industryMultiplier = 1.0;
+    let industryReasoning = 'Standard Turkish sector evaluation';
+    
+    for (const [industry, data] of Object.entries(turkishIndustryModifiers)) {
+      if (industryText.includes(industry)) {
+        detectedIndustry = industry;
+        industryMultiplier = data.multiplier;
+        industryReasoning = `Turkish ${industry} sector, multiplier: ×${data.multiplier}`;
+        break;
+      }
+    }
+    
+    // Ensure realistic base score range for Turkish market
+    baseScore = Math.max(20, Math.min(90, baseScore));
+    
+    // Calculate industry-adjusted score
+    const industryAdjustedScore = Math.max(0, Math.min(100, Math.round(baseScore * industryMultiplier)));
+    
+    // Create mock result structure
+    const mockResult = {
+      company_name: claudeAnalysis.company_name || 'Unknown Turkish Company',
+      base_score: Math.round(baseScore * 10) / 10,
+      industry_multiplier: Math.round(industryMultiplier * 100) / 100,
+      industry_adjusted_score: industryAdjustedScore,
+      detected_industry: detectedIndustry,
+      industry_confidence: turkishIndustryModifiers[detectedIndustry]?.confidence || 'low',
+      industry_explanation: industryReasoning,
+      processing_time_ms: 125,
+      priority_recommendation: industryAdjustedScore >= 60 ? 'target' : 'non_target',
+      mock_scoring: true,
+      mock_reason: 'API unavailable - using Turkish mock scoring'
+    };
+    
+    Logger.log(`✅ Turkish mock scoring completed with score: ${mockResult.industry_adjusted_score}`);
+    return mockResult;
+    
+  } catch (error) {
+    Logger.log('❌ Error creating Turkish mock scoring: ' + error.toString());
+    
+    // Return minimal fallback result
+    return {
+      company_name: claudeAnalysis.company_name || 'Unknown',
+      base_score: 40,
+      industry_multiplier: 1.0,
+      industry_adjusted_score: 40,
+      final_score: 40,
+      priority_recommendation: 'non_target',
+      mock_scoring: true,
+      error_in_mock_scoring: true
+    };
+  }
+}
+
+/**
+ * MISSING FUNCTION: Apply Turkish LLM adjustment to scoring results
+ * @param {Object} apiResult Base scoring result
+ * @param {Object} claudeAnalysis Claude analysis data
+ * @returns {Object} Result with LLM adjustment applied
+ */
+function applyTurkishLLMAdjustment(apiResult, claudeAnalysis) {
+  Logger.log('🧠 Applying Turkish B2B LLM adjustment');
+  
+  try {
+    const adjustments = [];
+    const reasoning = [];
+    
+    // Base information
+    reasoning.push(`Base: ${apiResult.industry_adjusted_score || apiResult.base_score || 0}, Industry: ${apiResult.detected_industry || 'unknown'}`);
+    
+    // Turkish market confidence adjustments
+    const analysisConfidence = claudeAnalysis.analysis_confidence || 'orta';
+    if (analysisConfidence === 'düşük' || analysisConfidence === 'low') {
+      adjustments.push({ value: -8, reason: 'Düşük veri kalitesi' });
+    } else if (analysisConfidence === 'yüksek' || analysisConfidence === 'high') {
+      adjustments.push({ value: 6, reason: 'Yüksek veri kalitesi' });
+    }
+    
+    // Enhanced B2B service potential assessment for Turkish market
+    if (claudeAnalysis.b2b_service_potential) {
+      const potentialText = claudeAnalysis.b2b_service_potential.toLowerCase();
+      
+      if (potentialText.includes('yüksek') || potentialText.includes('high') || potentialText.includes('güçlü')) {
+        adjustments.push({ value: 15, reason: 'Çok yüksek Türk B2B hizmet potansiyeli' });
+      } else if (potentialText.includes('orta') || potentialText.includes('medium')) {
+        adjustments.push({ value: 5, reason: 'Orta düzey Türk B2B hizmet potansiyeli' });
+      } else if (potentialText.includes('düşük') || potentialText.includes('low')) {
+        adjustments.push({ value: -10, reason: 'Sınırlı Türk B2B hizmet potansiyeli' });
+      }
+    }
+    
+    // Turkish business context analysis
+    if (claudeAnalysis.business_context) {
+      const contextText = claudeAnalysis.business_context.toLowerCase();
+      
+      if (contextText.includes('büyüme') || contextText.includes('growth') || contextText.includes('genişleme')) {
+        adjustments.push({ value: 12, reason: 'Aktif büyüme stratejisi' });
+      }
+      
+      if (contextText.includes('lider') || contextText.includes('leader') || contextText.includes('pazar lideri')) {
+        adjustments.push({ value: 10, reason: 'Pazar liderliği pozisyonu' });
+      }
+      
+      if (contextText.includes('ihracat') || contextText.includes('export') || contextText.includes('uluslararası')) {
+        adjustments.push({ value: 8, reason: 'Uluslararası ticaret faaliyetleri' });
+      }
+    }
+    
+    // Turkish market specific adjustments
+    if (claudeAnalysis.turkish_market_notes) {
+      const marketNotes = claudeAnalysis.turkish_market_notes.toLowerCase();
+      
+      if (marketNotes.includes('istanbul') || marketNotes.includes('ankara') || marketNotes.includes('izmir')) {
+        adjustments.push({ value: 6, reason: 'Büyük şehir merkezi konumu' });
+      }
+      
+      if (marketNotes.includes('sanayi') || marketNotes.includes('industrial') || marketNotes.includes('üretim')) {
+        adjustments.push({ value: 5, reason: 'Endüstriyel faaliyet bölgesi' });
+      }
+    }
+    
+    // Calculate total adjustment within ±25 limits
+    let totalAdjustment = 0;
+    const appliedAdjustments = [];
+    
+    // Sort by impact priority: positive first, then negative
+    const positiveAdj = adjustments.filter(adj => adj.value > 0).sort((a, b) => b.value - a.value);
+    const negativeAdj = adjustments.filter(adj => adj.value < 0).sort((a, b) => a.value - b.value);
+    
+    // Apply positive adjustments first
+    for (const adj of positiveAdj) {
+      if (totalAdjustment + adj.value <= 25) {
+        totalAdjustment += adj.value;
+        appliedAdjustments.push(adj);
+        reasoning.push(`LLM: +${adj.value} - ${adj.reason}`);
+      }
+    }
+    
+    // Then apply negative adjustments if there's room
+    for (const adj of negativeAdj) {
+      if (totalAdjustment + adj.value >= -25) {
+        totalAdjustment += adj.value;
+        appliedAdjustments.push(adj);
+        reasoning.push(`LLM: ${adj.value} - ${adj.reason}`);
+      }
+    }
+    
+    // Final bounds check
+    totalAdjustment = Math.max(-25, Math.min(25, totalAdjustment));
+    
+    // Calculate final score
+    const industryAdjustedScore = apiResult.industry_adjusted_score || apiResult.base_score || 0;
+    const finalScore = Math.max(0, Math.min(100, industryAdjustedScore + totalAdjustment));
+    
+    // Enhanced priority determination
+    const finalPriority = finalScore >= 60 ? 'target' : 'non_target';
+    
+    Logger.log(`✅ Turkish LLM adjustment applied: ${totalAdjustment}, Final score: ${finalScore}`);
+    
+    return {
+      ...apiResult,
+      llm_adjustment: totalAdjustment,
+      final_score: finalScore,
+      priority_recommendation: finalPriority,
+      reasoning: reasoning.join(' | '),
+      applied_adjustments: appliedAdjustments,
+      processing_timestamp: new Date().toISOString()
+    };
+    
+  } catch (error) {
+    Logger.log('❌ Error in Turkish LLM adjustment: ' + error.toString());
+    
+    // Return basic result with error information
+    return {
+      ...apiResult,
+      llm_adjustment: 0,
+      final_score: apiResult.industry_adjusted_score || apiResult.base_score || 0,
+      priority_recommendation: (apiResult.industry_adjusted_score || apiResult.base_score || 0) >= 60 ? 'target' : 'non_target',
+      reasoning: 'LLM adjustment failed: ' + error.message,
+      error_in_adjustment: true
+    };
+  }
+}
+
+/**
+ * MISSING FUNCTION: Generate Turkish quality report
+ * @param {Object} qualityAnalysis Quality metrics object
+ * @param {number} totalHeaders Total number of headers in spreadsheet
+ * @returns {string} Human-readable Turkish quality report
+ */
+function generateTurkishQualityReport(qualityAnalysis, totalHeaders) {
+  const reports = [];
+  
+  // Overall completeness with Turkish categories
+  const completeness = Math.round(qualityAnalysis.final_data_completeness || 0);
+  if (completeness >= 90) {
+    reports.push(`🌟 Mükemmel veri kalitesi (${completeness}%)`);
+  } else if (completeness >= 75) {
+    reports.push(`✅ Çok iyi veri kalitesi (${completeness}%)`);
+  } else if (completeness >= 60) {
+    reports.push(`⚠️ İyi veri kalitesi (${completeness}%)`);
+  } else if (completeness >= 40) {
+    reports.push(`⚠️ Orta veri kalitesi (${completeness}%)`);
+  } else {
+    reports.push(`❌ Düşük veri kalitesi (${completeness}%)`);
+  }
+  
+  // Structured mapping performance
+  reports.push(`Yapısal eşleştirme: ${qualityAnalysis.structured_mapping_success}/${qualityAnalysis.total_critical_fields}`);
+  
+  // Claude fallback usage
+  if (qualityAnalysis.claude_fallback_used) {
+    if (qualityAnalysis.claude_mapping_success > 0) {
+      reports.push(`Claude yardımı: +${qualityAnalysis.claude_mapping_success} alan`);
+    } else {
+      reports.push(`Claude yardımı: denendi ancak başarısız`);
+    }
+  }
+  
+  // Security validation status
+  if (qualityAnalysis.security_validation_passed) {
+    reports.push(`Güvenlik: ✅`);
+  } else {
+    reports.push(`Güvenlik: ⚠️`);
+  }
+  
+  // Missing fields warning (limited to prevent long messages)
+  if (qualityAnalysis.missing_fields && qualityAnalysis.missing_fields.length > 0) {
+    const missingStr = qualityAnalysis.missing_fields.slice(0, 3).join(', ');
+    const moreCount = qualityAnalysis.missing_fields.length - 3;
+    reports.push(`Eksik: ${missingStr}${moreCount > 0 ? ` +${moreCount} diğer` : ''}`);
+  }
+  
+  return reports.join(' | ');
+}
+
+/**
  * Test comprehensive Turkish header detection improvements
  * Validates that the new system handles Turkish business data correctly
  */
@@ -412,8 +880,8 @@ function validateYolwiseSystemConsistency() {
     };
     const financeResultTurkish = createYolwiseMockScoring(financeTestTurkish);
     
-    if (financeResultTurkish.detected_industry === 'finans' && financeResultTurkish.industry_multiplier === 1.20) {
-      Logger.log('✅ Türk sektör tespiti doğru çalışıyor (finans → ×1.20)');
+    if (financeResultTurkish.detected_industry === 'bankacılık' && financeResultTurkish.industry_multiplier === 1.20) {
+      Logger.log('✅ Türk sektör tespiti doğru çalışıyor (bankacılık → ×1.20)');
       validationResults.turkishIndustryLogic = true;
     } else {
       Logger.log(`❌ Türk sektör mantığı hatası: ${financeResultTurkish.detected_industry} → ×${financeResultTurkish.industry_multiplier}`);
