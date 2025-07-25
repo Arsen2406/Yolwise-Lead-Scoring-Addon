@@ -363,84 +363,84 @@
   <div class="container">
     <div class="header">
       <h2>🎯 Yolwise Lead Scoring</h2>
-      <p>Türk B2B pazarı için Claude AI ile otomatik şirket analizi ve skorlaması</p>
-      <div class="turkish-badge">🇹🇷 Türk B2B Pazarı Özelinde</div>
+      <p>Automated company analysis and scoring with Claude AI for Turkish B2B market</p>
+      <div class="turkish-badge">🇹🇷 Turkish B2B Market Focused</div>
     </div>
 
     <!-- Enhanced Continuation Banner -->
     <div class="continuation-banner" id="continuationBanner">
       <h4>
         <span class="icon">🔄</span>
-        Tamamlanmamış işleme bulundu
+        Incomplete processing found
       </h4>
-      <p id="continuationText">Durum kontrol ediliyor...</p>
+      <p id="continuationText">Checking status...</p>
       <div class="continuation-buttons" id="continuationButtons">
         <button type="button" class="btn btn-warning btn-small" id="continueBtn" disabled>
           <span class="loading-animation" style="display: none;"></span>
-          Devam Et
+          Continue
         </button>
         <button type="button" class="btn btn-secondary btn-small" id="clearStateBtn">
-          Yeniden Başla
+          Start Over
         </button>
       </div>
       <div class="loading-state" id="loadingState">
         <div class="loading-animation"></div>
-        Durum yükleniyor...
+        Loading status...
       </div>
     </div>
 
     <form id="scoringForm">
       <div class="form-group">
-        <label for="dataRange">Veri Aralığı:</label>
+        <label for="dataRange">Data Range:</label>
         <select id="dataRange" required>
-          <option value="">Aralıklar yükleniyor...</option>
+          <option value="">Loading ranges...</option>
         </select>
       </div>
 
       <div class="info-box">
-        <h4>📋 Önerilen Sütunlar:</h4>
+        <h4>📋 Recommended Columns:</h4>
         <ul>
-          <li><strong>Zorunlu:</strong> Şirket Adı / Company Name</li>
-          <li><strong>Önerilen:</strong> Sektör, Gelir, Çalışan Sayısı, Şehir</li>
-          <li><strong>Ek:</strong> Şirket Türü, Web Sitesi, Faaliyet</li>
+          <li><strong>Required:</strong> Company Name</li>
+          <li><strong>Recommended:</strong> Industry, Annual Revenue, Number of Employees, City</li>
+          <li><strong>Additional:</strong> Company Domain Name, Description, Year Founded</li>
         </ul>
       </div>
 
       <div class="turkish-features">
-        <h4>🇹🇷 Türk B2B Pazarı Özellikleri</h4>
+        <h4>🇹🇷 Turkish B2B Market Features</h4>
         <ul style="margin: 8px 0 0 20px; padding: 0; font-size: 13px; color: #8b4513;">
-          <li>Türk iş terminolojisi ve yasal formlar desteklenir</li>
-          <li>A.Ş., Ltd.Şti. gibi Türk şirket türleri tanınır</li>
-          <li>TL bazlı gelir değerlendirmesi yapılır</li>
-          <li>İstanbul, Ankara, İzmir odaklı coğrafi analiz</li>
-          <li>Türk B2B hizmet ihtiyaçlarına göre skorlama</li>
+          <li>Turkish business terminology and legal forms supported</li>
+          <li>Turkish company types (A.Ş., Ltd.Şti.) recognized</li>
+          <li>Turkish Lira (TL) based revenue evaluation</li>
+          <li>Istanbul, Ankara, Izmir focused geographic analysis</li>
+          <li>Scoring based on Turkish B2B service needs</li>
         </ul>
       </div>
 
       <div class="checkbox-group">
         <input type="checkbox" id="detailedLogging">
-        <label for="detailedLogging">Detaylı günlük kaydı (hata ayıklama için)</label>
+        <label for="detailedLogging">Detailed logging (for debugging)</label>
       </div>
 
       <div class="buttons">
         <button type="button" class="btn btn-secondary" onclick="google.script.host.close()">
-          İptal
+          Cancel
         </button>
         <button type="submit" class="btn btn-primary" id="startBtn">
-          Analizi Başlat
+          Start Analysis
         </button>
       </div>
     </form>
 
     <div class="progress" id="progressSection">
-      <div class="progress-text" id="progressText">Hazırlanıyor...</div>
+      <div class="progress-text" id="progressText">Preparing...</div>
       <div class="progress-bar">
         <div class="progress-fill" id="progressFill"></div>
       </div>
     </div>
 
     <div class="results" id="resultsSection">
-      <h4 id="resultsTitle">Analiz tamamlandı!</h4>
+      <h4 id="resultsTitle">Analysis completed!</h4>
       <div id="resultsContent"></div>
     </div>
   </div>
@@ -471,7 +471,7 @@
 
     function loadAvailableRanges() {
       const select = document.getElementById('dataRange');
-      select.innerHTML = '<option value="">Yükleniyor...</option>';
+      select.innerHTML = '<option value="">Loading...</option>';
 
       google.script.run
         .withSuccessHandler(populateRanges)
@@ -484,7 +484,7 @@
       select.innerHTML = '';
 
       if (ranges.length === 0) {
-        select.innerHTML = '<option value="">Veri bulunamadı</option>';
+        select.innerHTML = '<option value="">No data found</option>';
         document.getElementById('startBtn').disabled = true;
         return;
       }
@@ -505,8 +505,8 @@
 
     function handleRangeError(error) {
       const select = document.getElementById('dataRange');
-      select.innerHTML = '<option value="">Veri yükleme hatası</option>';
-      showError('Aralık yükleme hatası: ' + error.message);
+      select.innerHTML = '<option value="">Data loading error</option>';
+      showError('Range loading error: ' + error.message);
     }
 
     /**
@@ -546,7 +546,7 @@
     }
 
     /**
-     * Show the continuation banner with Turkish processing details
+     * Show the continuation banner with processing details
      */
     function showContinuationBanner(state) {
       console.log('Showing continuation banner for state:', state);
@@ -557,17 +557,17 @@
       const continueBtn = document.getElementById('continueBtn');
       
       const progress = state.processedRows || 0;
-      const total = state.results ? state.results.total : 'bilinmiyor';
+      const total = state.results ? state.results.total : 'unknown';
       const successful = state.results ? state.results.successful : 0;
       const failed = state.results ? state.results.failed : 0;
       
-      // Create detailed progress text in Turkish
-      const progressPercent = total !== 'bilinmiyor' ? Math.round((progress / total) * 100) : 0;
+      // Create detailed progress text in English
+      const progressPercent = total !== 'unknown' ? Math.round((progress / total) * 100) : 0;
       
       text.innerHTML = `
-        <strong>İlerleme:</strong> ${progress} / ${total} şirket işlendi (${progressPercent}%)<br>
-        <strong>Başarılı:</strong> ${successful} • <strong>Hata:</strong> ${failed}<br>
-        <small>${progress + 1}. satırdan devam edebilir veya yeniden başlatabilirsiniz.</small>
+        <strong>Progress:</strong> ${progress} / ${total} companies processed (${progressPercent}%)<br>
+        <strong>Successful:</strong> ${successful} • <strong>Failed:</strong> ${failed}<br>
+        <small>You can continue from row ${progress + 1} or start over.</small>
       `;
       
       // Enable continue button and show buttons
@@ -591,7 +591,7 @@
       console.log('Continue button clicked');
       
       if (!processingState) {
-        showError('Devam ettirilecek durum bulunamadı');
+        showError('No processing state found to continue');
         return;
       }
 
@@ -601,7 +601,7 @@
       
       continueBtn.disabled = true;
       loadingAnim.style.display = 'inline-block';
-      continueBtn.innerHTML = '<span class="loading-animation"></span>Devam ediliyor...';
+      continueBtn.innerHTML = '<span class="loading-animation"></span>Continuing...';
       
       // Hide the banner and start continuation
       setTimeout(() => {
@@ -630,7 +630,7 @@
       document.getElementById('progressSection').style.display = 'none';
       
       // Show error with continuation context
-      showError('Devam etme hatası: ' + error.message + '\\n\\n"Yeniden Başla" seçeneğini deneyebilir veya ayrıntılar için günlükleri kontrol edebilirsiniz.');
+      showError('Continuation error: ' + error.message + '\\n\\nYou can try "Start Over" option or check logs for details.');
       
       resetForm();
       
@@ -648,19 +648,19 @@
       
       const clearBtn = document.getElementById('clearStateBtn');
       clearBtn.disabled = true;
-      clearBtn.textContent = 'Temizleniyor...';
+      clearBtn.textContent = 'Clearing...';
       
       google.script.run
         .withSuccessHandler(function() {
           hideContinuationBanner();
-          showInfoMessage('İşleme durumu temizlendi. Yeni analiz başlatabilirsiniz.');
+          showInfoMessage('Processing state cleared. You can start a new analysis.');
           clearBtn.disabled = false;
-          clearBtn.textContent = 'Yeniden Başla';
+          clearBtn.textContent = 'Start Over';
         })
         .withFailureHandler(function(error) {
-          showError('Durum temizleme hatası: ' + error.message);
+          showError('State clearing error: ' + error.message);
           clearBtn.disabled = false;
-          clearBtn.textContent = 'Yeniden Başla';
+          clearBtn.textContent = 'Start Over';
         })
         .clearProcessingState();
     }
@@ -678,7 +678,7 @@
       };
 
       if (!options.dataRange) {
-        showError('Lütfen bir veri aralığı seçin');
+        showError('Please select a data range');
         return;
       }
 
@@ -695,7 +695,7 @@
       
       // Update UI
       document.getElementById('startBtn').disabled = true;
-      document.getElementById('startBtn').innerHTML = '<div class="loading-animation"></div>İşleniyor...';
+      document.getElementById('startBtn').innerHTML = '<div class="loading-animation"></div>Processing...';
       document.getElementById('progressSection').style.display = 'block';
       document.getElementById('resultsSection').style.display = 'none';
 
@@ -714,13 +714,13 @@
       const progressFill = document.getElementById('progressFill');
       const progressText = document.getElementById('progressText');
       
-      const turkishMessages = [
-        'Türk şirket verisi analizi başlatılıyor...',
-        'Şirket bilgileri işleniyor...',
-        'Claude API ile Türk B2B analizi...',
-        'Yolwise API ile skorlama...',
-        'LLM düzeltmeleri uygulanıyor...',
-        'Sonuçlar kaydediliyor...'
+      const messages = [
+        'Starting Turkish company data analysis...',
+        'Processing company information...',
+        'Claude API Turkish B2B analysis...',
+        'Yolwise API scoring...',
+        'Applying LLM adjustments...',
+        'Saving results...'
       ];
 
       processingInterval = setInterval(() => {
@@ -731,8 +731,8 @@
 
         progressFill.style.width = progress + '%';
         
-        const messageIndex = Math.floor((progress / 100) * (turkishMessages.length - 1));
-        progressText.textContent = turkishMessages[messageIndex] || turkishMessages[turkishMessages.length - 1];
+        const messageIndex = Math.floor((progress / 100) * (messages.length - 1));
+        progressText.textContent = messages[messageIndex] || messages[messages.length - 1];
       }, 1200);
     }
 
@@ -741,7 +741,7 @@
       
       // Complete progress
       document.getElementById('progressFill').style.width = '100%';
-      document.getElementById('progressText').textContent = 'Tamamlandı!';
+      document.getElementById('progressText').textContent = 'Completed!';
       
       setTimeout(() => {
         document.getElementById('progressSection').style.display = 'none';
@@ -768,15 +768,15 @@
       document.getElementById('progressSection').style.display = 'none';
       
       // Check if this is a timeout error
-      if (error.message && (error.message.includes('timeout') || error.message.includes('zaman'))) {
-        showError('Zaman aşımı. Durum kaydedildi - işlemi tamamlamak için "Devam Et" butonunu kullanın.');
+      if (error.message && (error.message.includes('timeout') || error.message.includes('time'))) {
+        showError('Timeout occurred. State saved - use "Continue" button to complete the process.');
         
         // Re-check for processing state
         setTimeout(() => {
           checkProcessingState();
         }, 2000);
       } else {
-        showError('Bir hata oluştu: ' + error.message);
+        showError('An error occurred: ' + error.message);
       }
       
       resetForm();
@@ -789,7 +789,7 @@
       
       resultsSection.className = 'results';
       resultsSection.style.display = 'block';
-      resultsTitle.textContent = 'Kısmi Sonuçlar';
+      resultsTitle.textContent = 'Partial Results';
       
       const processedRate = results.total > 0 ? Math.round((results.processed / results.total) * 100) : 0;
       
@@ -798,23 +798,23 @@
         <div class="stats">
           <div class="stat-item">
             <div class="stat-number">${results.processed}</div>
-            <div class="stat-label">İşlendi</div>
+            <div class="stat-label">Processed</div>
           </div>
           <div class="stat-item">
             <div class="stat-number">${results.total - results.processed}</div>
-            <div class="stat-label">Kaldı</div>
+            <div class="stat-label">Remaining</div>
           </div>
           <div class="stat-item">
             <div class="stat-number">${processedRate}%</div>
-            <div class="stat-label">İlerleme</div>
+            <div class="stat-label">Progress</div>
           </div>
           <div class="stat-item">
             <div class="stat-number">${results.successful}</div>
-            <div class="stat-label">Başarılı</div>
+            <div class="stat-label">Successful</div>
           </div>
         </div>
         <p style="margin-top: 16px; color: #1a73e8;">
-          <strong>İşleme bir sonraki çalıştırmada otomatik olarak devam edecek.</strong>
+          <strong>Processing will automatically continue in the next run.</strong>
         </p>
       `;
     }
@@ -826,29 +826,29 @@
       resultsSection.className = 'results';
       resultsSection.style.display = 'block';
 
-      const targetRate = results.total > 0 ? Math.round((results.successful / results.total) * 100) : 0;
+      const successRate = results.total > 0 ? Math.round((results.successful / results.total) * 100) : 0;
       
       resultsContent.innerHTML = `
         <div class="stats">
           <div class="stat-item">
             <div class="stat-number">${results.total}</div>
-            <div class="stat-label">Toplam Şirket</div>
+            <div class="stat-label">Total Companies</div>
           </div>
           <div class="stat-item">
             <div class="stat-number">${results.successful}</div>
-            <div class="stat-label">Başarıyla İşlendi</div>
+            <div class="stat-label">Successfully Processed</div>
           </div>
           <div class="stat-item">
             <div class="stat-number">${results.failed}</div>
-            <div class="stat-label">Hata</div>
+            <div class="stat-label">Failed</div>
           </div>
           <div class="stat-item">
-            <div class="stat-number">${targetRate}%</div>
-            <div class="stat-label">Başarı</div>
+            <div class="stat-number">${successRate}%</div>
+            <div class="stat-label">Success Rate</div>
           </div>
         </div>
-        <p>Sonuçlar tabloya eklendi. Verilerinizin sağındaki yeni sütunları kontrol edin.</p>
-        ${results.failed > 0 ? '<div class="warning">⚠️ Bazı şirketler işlenemedi. Ayrıntılar için günlükleri kontrol edin.</div>' : ''}
+        <p>Results have been added to the spreadsheet. Check the new columns to the right of your data.</p>
+        ${results.failed > 0 ? '<div class="warning">⚠️ Some companies could not be processed. Check logs for details.</div>' : ''}
       `;
     }
 
@@ -859,7 +859,7 @@
       
       resultsSection.className = 'results error';
       resultsSection.style.display = 'block';
-      resultsTitle.textContent = 'Bir hata oluştu';
+      resultsTitle.textContent = 'An error occurred';
       resultsContent.innerHTML = `<p>${message.replace(/\\n/g, '<br>')}</p>`;
     }
 
@@ -870,14 +870,14 @@
       
       resultsSection.className = 'results';
       resultsSection.style.display = 'block';
-      resultsTitle.textContent = 'Bilgi';
+      resultsTitle.textContent = 'Information';
       resultsContent.innerHTML = `<p>${message}</p>`;
     }
 
     function resetForm() {
       isProcessing = false;
       document.getElementById('startBtn').disabled = false;
-      document.getElementById('startBtn').innerHTML = 'Analizi Başlat';
+      document.getElementById('startBtn').innerHTML = 'Start Analysis';
     }
 
     // Helper functions for development/testing
