@@ -191,7 +191,7 @@ function sanitizeCompanyData(data) {
       if (typeof value === 'string') {
         // Remove potentially dangerous characters and limit length
         let cleanValue = value.toString()
-          .replace(/[<>"\&]/g, '')  // Remove HTML/XML characters
+          .replace(/[<>"\\&]/g, '')  // Remove HTML/XML characters
           .replace(/[\r\n\t]/g, ' ')  // Replace line breaks with spaces
           .substring(0, 1000);  // Limit length
         sanitized[key] = cleanValue;
@@ -199,7 +199,7 @@ function sanitizeCompanyData(data) {
         // Sanitize array elements
         sanitized[key] = value.map(item => 
           typeof item === 'string' ? 
-            item.toString().replace(/[<>"\&]/g, '').substring(0, 500) : 
+            item.toString().replace(/[<>"\\&]/g, '').substring(0, 500) : 
             item
         );
       } else {
@@ -218,6 +218,7 @@ function sanitizeCompanyData(data) {
 /**
  * Call Claude 4 Sonnet API with enhanced security and error handling
  * ENHANCED: Better error handling, timeout management, response validation
+ * FIXED: Allow redirects for proper API functionality (resolves 307 errors)
  * @param {String} prompt Analysis prompt
  * @param {String} apiKey API key
  * @returns {Object} API response
@@ -248,7 +249,7 @@ function callClaudeAPISecure(prompt, apiKey) {
     payload: JSON.stringify(payload),
     muteHttpExceptions: true,  // Handle errors manually
     validateHttpsCertificates: true,  // Security best practice
-    followRedirects: false  // Security measure
+    followRedirects: true  // Allow redirects for proper API functionality (fixes 307 errors)
   };
   
   Logger.log('🔗 Calling Claude API for Turkish business analysis...');
@@ -444,6 +445,7 @@ function extractBasicInfoFromText(text) {
 /**
  * Score company with Yolwise API - ENHANCED WITH STANDARDIZED AUTHENTICATION
  * FIXED: Consistent authentication, better error handling, enhanced logging
+ * FIXED: Allow redirects for proper API functionality (prevents 307 errors)
  * @param {Object} claudeAnalysis Analyzed company data
  * @returns {Object} Scoring results with proper API format
  */
@@ -506,7 +508,7 @@ function scoreWithYolwise(claudeAnalysis) {
       payload: JSON.stringify(payload),
       muteHttpExceptions: true,  // Handle errors manually
       validateHttpsCertificates: true,
-      followRedirects: false
+      followRedirects: true  // Allow redirects for proper API functionality (prevents 307 errors)
     };
     
     // STANDARDIZED AUTHENTICATION - Use X-API-Key header consistently
