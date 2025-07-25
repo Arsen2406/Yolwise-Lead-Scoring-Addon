@@ -11,12 +11,43 @@ import os
 import json
 import time
 import re
+import functools
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, asdict
 from flask import Flask, request, jsonify, abort
 from werkzeug.exceptions import HTTPException
 
 app = Flask(__name__)
+
+
+# API Key Authentication Decorator (Context7 Flask Pattern)
+def require_api_key(f):
+    """
+    API key authentication decorator following Context7 Flask patterns.
+    Checks for API key in X-API-Key header or api_key query parameter.
+    Validates against YOLWISE_API_KEY environment variable.
+    """
+    @functools.wraps(f)
+    def decorated_function(*args, **kwargs):
+        # Get expected API key from environment (Context7 pattern)
+        expected_api_key = os.environ.get('YOLWISE_API_KEY')
+        
+        if not expected_api_key:
+            abort(500, description="Server configuration error: API key not configured")
+        
+        # Check X-API-Key header (Context7 Flask request pattern)
+        provided_api_key = request.headers.get('X-API-Key')
+        
+        # If not in header, check query parameter (Context7 Flask args pattern)
+        if not provided_api_key:
+            provided_api_key = request.args.get('api_key')
+        
+        # Validate API key (Context7 authentication pattern)
+        if not provided_api_key or provided_api_key != expected_api_key:
+            abort(401, description="Unauthorized: Valid API key required")
+        
+        return f(*args, **kwargs)
+    return decorated_function
 
 
 @dataclass
@@ -443,7 +474,7 @@ def handle_generic_exception(e):
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    """Health check endpoint"""
+    """Health check endpoint - Public access"""
     return jsonify({
         'status': 'healthy',
         'timestamp': time.time(),
@@ -454,8 +485,9 @@ def health_check():
 
 
 @app.route('/score_company', methods=['POST'])
+@require_api_key
 def score_company():
-    """Mathematical scoring of single company"""
+    """Mathematical scoring of single company - Requires API key authentication"""
     try:
         # Basic validation (from Context7 Flask patterns)
         if not request.json:
@@ -488,8 +520,9 @@ def score_company():
 
 
 @app.route('/score_batch', methods=['POST'])
+@require_api_key
 def score_batch():
-    """Mathematical batch scoring"""
+    """Mathematical batch scoring - Requires API key authentication"""
     try:
         if not request.json:
             abort(400, description="JSON payload required")
@@ -570,7 +603,7 @@ def score_batch():
 
 @app.route('/industries', methods=['GET'])
 def get_industries():
-    """Get mathematical industry multipliers"""
+    """Get mathematical industry multipliers - Public access"""
     industries = {}
     for industry, data in scoring_engine.industry_modifiers.items():
         industries[industry] = {
@@ -594,17 +627,26 @@ def get_industries():
 
 @app.route('/', methods=['GET'])
 def api_info():
-    """API information"""
+    """API information - Public access"""
     return jsonify({
         'name': 'Yolwise Lead Scoring API',
         'version': '2.0-mathematical',
         'description': 'Turkish B2B market mathematical scoring - NO LLM logic',
+        'authentication': {
+            'required_endpoints': ['/score_company', '/score_batch'],
+            'public_endpoints': ['/health', '/industries', '/'],
+            'methods': [
+                'Header: X-API-Key: your-api-key',
+                'Query parameter: ?api_key=your-api-key'
+            ],
+            'environment_variable': 'YOLWISE_API_KEY'
+        },
         'endpoints': {
-            '/health': 'GET - Health check',
-            '/score_company': 'POST - Score single company',
-            '/score_batch': 'POST - Score multiple companies',
-            '/industries': 'GET - List supported industries with multipliers',
-            '/': 'GET - This API information'
+            '/health': 'GET - Health check (public)',
+            '/score_company': 'POST - Score single company (requires API key)',
+            '/score_batch': 'POST - Score multiple companies (requires API key)',
+            '/industries': 'GET - List supported industries with multipliers (public)',
+            '/': 'GET - This API information (public)'
         },
         'scoring_approach': 'Mathematical only - no AI/LLM components',
         'target_threshold': 60,
